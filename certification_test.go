@@ -3,6 +3,8 @@ package csi_cert_test
 import (
 	"os"
 
+	"golang.org/x/net/context"
+
 	"code.cloudfoundry.org/lager"
 	"code.cloudfoundry.org/lager/lagertest"
 	. "github.com/onsi/ginkgo"
@@ -16,8 +18,9 @@ import (
 var _ = Describe("Certify with: ", func() {
 
 	var (
+		err         error
 		testLogger  lager.Logger
-		clientConn  *grpc.ClientConn
+		conn        *grpc.ClientConn
 		csiClient   csi.ControllerClient
 		certFixture csi_cert.CertificationFixture
 	)
@@ -26,22 +29,33 @@ var _ = Describe("Certify with: ", func() {
 		testLogger = lagertest.NewTestLogger("CSI Certification")
 		fileName := os.Getenv("FIXTURE_FILENAME")
 		Expect(fileName).NotTo(Equal(""))
-		certFixture = csi_cert.LoadCertificationFixture(fileName)
-		conn, err := grpc.Dial(certFixture.)
+		certFixture, err = csi_cert.LoadCertificationFixture(fileName)
 		Expect(err).NotTo(HaveOccurred())
-		csiClient = csi.NewControllerClient()
+		conn, err = grpc.Dial(certFixture.DriverAddress, grpc.WithInsecure())
+		Expect(err).NotTo(HaveOccurred())
+		csiClient = csi.NewControllerClient(conn)
+	})
+	AfterEach(func() {
+		conn.Close()
 	})
 
 	Context("given a CSI client", func() {
-		BeforeEach(func() {
+		var (
+			resp *csi.ControllerGetCapabilitiesResponse
+		)
 
-		})
-		AfterEach(func() {
-			conn.Close()
-		})
 		It("should respond with Capabilities", func() {
-			resp := csiClient.Capabilities(testEnv)
-			Expect(resp.Capabilities).NotTo(BeNil())
+			ctx := context.TODO()
+			request := &csi.ControllerGetCapabilitiesRequest{
+				Version: &csi.Version{
+					Major: 0,
+					Minor: 0,
+					Patch: 1,
+				},
+			}
+			resp, err = csiClient.ControllerGetCapabilities(ctx, request)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp).NotTo(BeNil())
 		})
 	})
 
