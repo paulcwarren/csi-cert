@@ -18,8 +18,7 @@ import (
 	csi_cert "github.com/paulcwarren/csi-cert"
 )
 
-func HasCapabilityAddDeleteVolume(client csi.ControllerClient) bool {
-
+func HasCapability(client csi.ControllerClient, hasCap csi.ControllerServiceCapability_RPC_Type) bool {
 	ctx := context.TODO()
 	cap_request := &csi.ControllerGetCapabilitiesRequest{
 		Version: &csi.Version{
@@ -33,15 +32,22 @@ func HasCapabilityAddDeleteVolume(client csi.ControllerClient) bool {
 	cap_result := cap_resp.GetResult()
 	Expect(cap_result).NotTo(BeNil())
 
-	create_delete_volume_supported := false
+	capability_supported := false
 
 	for _, capability := range cap_result.Capabilities {
-		if capability.GetRpc().GetType() == csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME {
-			create_delete_volume_supported = true
+		if capability.GetRpc().GetType() == hasCap {
+			capability_supported = true
 		}
 	}
+	return capability_supported
+}
 
-	return create_delete_volume_supported
+func HasCapabilityAddDeleteVolume(client csi.ControllerClient) bool {
+	return HasCapability(client, csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME)
+}
+
+func HasCapabilityPublishUnpublishVolume(client csi.ControllerClient) bool {
+	return HasCapability(client, csi.ControllerServiceCapability_RPC_PUBLISH_UNPUBLISH_VOLUME)
 }
 
 var isSeeded = false
@@ -63,13 +69,15 @@ func randomString(n int) string {
 var _ = Describe("Certify with: ", func() {
 
 	var (
-		err               error
-		testLogger        lager.Logger
-		conn              *grpc.ClientConn
-		csiClient         csi.ControllerClient
-		certFixture       csi_cert.CertificationFixture
-		ctx               context.Context
-		capability_volume bool
+		err                              error
+		testLogger                       lager.Logger
+		conn                             *grpc.ClientConn
+		csiClient                        csi.ControllerClient
+		certFixture                      csi_cert.CertificationFixture
+		ctx                              context.Context
+		capabilityAddDeleteVolume        bool
+		capabilityPublishUnpublishVolume bool
+		version                          *csi.Version
 	)
 
 	BeforeEach(func() {
@@ -82,7 +90,13 @@ var _ = Describe("Certify with: ", func() {
 		conn, err = grpc.Dial(certFixture.DriverAddress, grpc.WithInsecure())
 		Expect(err).NotTo(HaveOccurred())
 		csiClient = csi.NewControllerClient(conn)
-		capability_volume = HasCapabilityAddDeleteVolume(csiClient)
+		version = &csi.Version{
+			Major: 0,
+			Minor: 0,
+			Patch: 1,
+		}
+		capabilityAddDeleteVolume = HasCapabilityAddDeleteVolume(csiClient)
+		capabilityPublishUnpublishVolume = HasCapabilityPublishUnpublishVolume(csiClient)
 	})
 
 	AfterEach(func() {
@@ -97,11 +111,7 @@ var _ = Describe("Certify with: ", func() {
 
 		BeforeEach(func() {
 			request = &csi.ControllerGetCapabilitiesRequest{
-				Version: &csi.Version{
-					Major: 0,
-					Minor: 0,
-					Patch: 1,
-				},
+				Version: version,
 			}
 		})
 
@@ -121,17 +131,14 @@ var _ = Describe("Certify with: ", func() {
 			vc      []*csi.VolumeCapability
 			request *csi.CreateVolumeRequest
 			resp    *csi.CreateVolumeResponse
+			volID   *csi.VolumeID
 		)
 
 		BeforeEach(func() {
 			volName = fmt.Sprintf("new-volume-%s", randomString(10))
 			vc = []*csi.VolumeCapability{{Value: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}}}}
 			request = &csi.CreateVolumeRequest{
-				Version: &csi.Version{
-					Major: 0,
-					Minor: 0,
-					Patch: 1,
-				},
+				Version:            version,
 				Name:               volName,
 				VolumeCapabilities: vc,
 			}
@@ -139,10 +146,11 @@ var _ = Describe("Certify with: ", func() {
 
 		JustBeforeEach(func() {
 			resp, err = csiClient.CreateVolume(ctx, request)
+			volID = resp.GetResult().VolumeInfo.GetId()
 		})
 
 		It("should respond to a CreateVolume request", func() {
-			if capability_volume {
+			if capabilityAddDeleteVolume {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(resp).NotTo(BeNil())
 				Expect(resp.GetError()).To(BeNil())
@@ -155,14 +163,14 @@ var _ = Describe("Certify with: ", func() {
 		Context("given the volume already exists", func() {
 			BeforeEach(func() {
 				resp, err = csiClient.CreateVolume(ctx, request)
-				if capability_volume {
+				if capabilityAddDeleteVolume {
 					Expect(err).NotTo(HaveOccurred())
 					Expect(resp).NotTo(BeNil())
 					Expect(resp.GetError()).To(BeNil())
 				}
 			})
 			It("should succeed", func() {
-				if capability_volume {
+				if capabilityAddDeleteVolume {
 					Expect(err).NotTo(HaveOccurred())
 					Expect(resp).NotTo(BeNil())
 					Expect(resp.GetError()).To(BeNil())
@@ -174,11 +182,7 @@ var _ = Describe("Certify with: ", func() {
 			BeforeEach(func() {
 				volName = ""
 				request = &csi.CreateVolumeRequest{
-					Version: &csi.Version{
-						Major: 0,
-						Minor: 0,
-						Patch: 1,
-					},
+					Version:            version,
 					Name:               volName,
 					VolumeCapabilities: vc,
 				}
@@ -189,6 +193,58 @@ var _ = Describe("Certify with: ", func() {
 				Expect(resp.GetError()).NotTo(BeNil())
 			})
 		})
+
+		Context("#ControllerPublishVolume", func() {
+			var (
+				publishRequest *csi.ControllerPublishVolumeRequest
+				publishResp    *csi.ControllerPublishVolumeResponse
+			)
+
+			BeforeEach(func() {
+				publishRequest = &csi.ControllerPublishVolumeRequest{
+					Version:  version,
+					VolumeId: volID,
+					Readonly: false,
+				}
+			})
+
+			JustBeforeEach(func() {
+				publishResp, err = csiClient.ControllerPublishVolume(ctx, publishRequest)
+			})
+
+			It("should respond to a ControllerPublishVolume request", func() {
+				Expect(err).NotTo(HaveOccurred())
+				Expect(publishResp).NotTo(BeNil())
+				Expect(publishResp.GetResult().GetPublishVolumeInfo()).NotTo(BeNil())
+			})
+
+			Context("#ControllerUnpublishVolume", func() {
+				var (
+					unpublishRequest *csi.ControllerUnpublishVolumeRequest
+					unpublishResp    *csi.ControllerUnpublishVolumeResponse
+				)
+
+				BeforeEach(func() {
+					unpublishRequest = &csi.ControllerUnpublishVolumeRequest{
+						Version:  version,
+						VolumeId: volID,
+					}
+				})
+
+				JustBeforeEach(func() {
+					unpublishResp, err = csiClient.ControllerUnpublishVolume(ctx, unpublishRequest)
+				})
+
+				It("should respond to a ControllerUnpublishVolume request", func() {
+					Expect(err).NotTo(HaveOccurred())
+					Expect(unpublishResp).NotTo(BeNil())
+					Expect(unpublishResp.GetResult()).NotTo(BeNil())
+				})
+
+			})
+
+		})
+
 	})
 
 	Context("#DeleteVolume", func() {
@@ -208,11 +264,7 @@ var _ = Describe("Certify with: ", func() {
 
 		JustBeforeEach(func() {
 			delete_request = &csi.DeleteVolumeRequest{
-				Version: &csi.Version{
-					Major: 0,
-					Minor: 0,
-					Patch: 1,
-				},
+				Version:  version,
 				VolumeId: volID,
 			}
 
@@ -221,14 +273,10 @@ var _ = Describe("Certify with: ", func() {
 
 		Context("given a existent volume", func() {
 			BeforeEach(func() {
-				if capability_volume {
+				if capabilityAddDeleteVolume {
 					vc = []*csi.VolumeCapability{{Value: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}}}}
 					create_request = &csi.CreateVolumeRequest{
-						Version: &csi.Version{
-							Major: 0,
-							Minor: 0,
-							Patch: 1,
-						},
+						Version:            version,
 						Name:               volName,
 						VolumeCapabilities: vc,
 					}
@@ -237,7 +285,7 @@ var _ = Describe("Certify with: ", func() {
 			})
 
 			It("should respond to a DeleteVolume request", func() {
-				if capability_volume {
+				if capabilityAddDeleteVolume {
 					Expect(err).NotTo(HaveOccurred())
 					Expect(resp).NotTo(BeNil())
 					Expect(resp.GetError()).To(BeNil())
@@ -254,7 +302,7 @@ var _ = Describe("Certify with: ", func() {
 			})
 
 			It("should fail with an error", func() {
-				if capability_volume {
+				if capabilityAddDeleteVolume {
 					Expect(err).NotTo(HaveOccurred())
 					Expect(resp).NotTo(BeNil())
 					resp_error := resp.GetError()
@@ -273,7 +321,7 @@ var _ = Describe("Certify with: ", func() {
 			})
 
 			It("should fail with an error", func() {
-				if capability_volume {
+				if capabilityAddDeleteVolume {
 					Expect(err).NotTo(HaveOccurred())
 					Expect(resp).NotTo(BeNil())
 					resp_error := resp.GetError()
