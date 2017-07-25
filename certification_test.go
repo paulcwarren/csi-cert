@@ -20,26 +20,26 @@ import (
 
 func HasCapability(client csi.ControllerClient, hasCap csi.ControllerServiceCapability_RPC_Type) bool {
 	ctx := context.TODO()
-	cap_request := &csi.ControllerGetCapabilitiesRequest{
+	capRequest := &csi.ControllerGetCapabilitiesRequest{
 		Version: &csi.Version{
 			Major: 0,
 			Minor: 0,
 			Patch: 1,
 		},
 	}
-	cap_resp, err := client.ControllerGetCapabilities(ctx, cap_request)
+	capResp, err := client.ControllerGetCapabilities(ctx, capRequest)
 	Expect(err).NotTo(HaveOccurred())
-	cap_result := cap_resp.GetResult()
-	Expect(cap_result).NotTo(BeNil())
+	capResult := capResp.GetResult()
+	Expect(capResult).NotTo(BeNil())
 
-	capability_supported := false
+	capabilitySupported := false
 
-	for _, capability := range cap_result.Capabilities {
+	for _, capability := range capResult.Capabilities {
 		if capability.GetRpc().GetType() == hasCap {
-			capability_supported = true
+			capabilitySupported = true
 		}
 	}
-	return capability_supported
+	return capabilitySupported
 }
 
 func HasCapabilityAddDeleteVolume(client csi.ControllerClient) bool {
@@ -127,11 +127,11 @@ var _ = Describe("Certify with: ", func() {
 
 	Context("#CreateVolume", func() {
 		var (
-			volName string
-			vc      []*csi.VolumeCapability
-			request *csi.CreateVolumeRequest
-			resp    *csi.CreateVolumeResponse
-			volID   *csi.VolumeID
+			volName       string
+			vc            []*csi.VolumeCapability
+			request       *csi.CreateVolumeRequest
+			createVolResp *csi.CreateVolumeResponse
+			volID         *csi.VolumeID
 		)
 
 		BeforeEach(func() {
@@ -145,35 +145,35 @@ var _ = Describe("Certify with: ", func() {
 		})
 
 		JustBeforeEach(func() {
-			resp, err = csiClient.CreateVolume(ctx, request)
-			volID = resp.GetResult().VolumeInfo.GetId()
+			createVolResp, err = csiClient.CreateVolume(ctx, request)
 		})
 
 		It("should respond to a CreateVolume request", func() {
 			if capabilityAddDeleteVolume {
 				Expect(err).NotTo(HaveOccurred())
-				Expect(resp).NotTo(BeNil())
-				Expect(resp.GetError()).To(BeNil())
+				Expect(createVolResp).NotTo(BeNil())
+				Expect(createVolResp.GetError()).To(BeNil())
+				Expect(createVolResp.GetResult().GetVolumeInfo().GetId()).NotTo(BeNil())
 			} else {
 				Expect(err).NotTo(HaveOccurred())
-				Expect(resp.GetError()).NotTo(BeNil())
+				Expect(createVolResp.GetError()).NotTo(BeNil())
 			}
 		})
 
 		Context("given the volume already exists", func() {
 			BeforeEach(func() {
-				resp, err = csiClient.CreateVolume(ctx, request)
+				createVolResp, err = csiClient.CreateVolume(ctx, request)
 				if capabilityAddDeleteVolume {
 					Expect(err).NotTo(HaveOccurred())
-					Expect(resp).NotTo(BeNil())
-					Expect(resp.GetError()).To(BeNil())
+					Expect(createVolResp).NotTo(BeNil())
+					Expect(createVolResp.GetError()).To(BeNil())
 				}
 			})
 			It("should succeed", func() {
 				if capabilityAddDeleteVolume {
 					Expect(err).NotTo(HaveOccurred())
-					Expect(resp).NotTo(BeNil())
-					Expect(resp.GetError()).To(BeNil())
+					Expect(createVolResp).NotTo(BeNil())
+					Expect(createVolResp.GetError()).To(BeNil())
 				}
 			})
 		})
@@ -190,7 +190,7 @@ var _ = Describe("Certify with: ", func() {
 
 			It("should fail with an error", func() {
 				Expect(err).NotTo(HaveOccurred())
-				Expect(resp.GetError()).NotTo(BeNil())
+				Expect(createVolResp.GetError()).NotTo(BeNil())
 			})
 		})
 
@@ -200,15 +200,13 @@ var _ = Describe("Certify with: ", func() {
 				publishResp    *csi.ControllerPublishVolumeResponse
 			)
 
-			BeforeEach(func() {
+			JustBeforeEach(func() {
+				volID = createVolResp.GetResult().VolumeInfo.GetId()
 				publishRequest = &csi.ControllerPublishVolumeRequest{
 					Version:  version,
 					VolumeId: volID,
 					Readonly: false,
 				}
-			})
-
-			JustBeforeEach(func() {
 				publishResp, err = csiClient.ControllerPublishVolume(ctx, publishRequest)
 			})
 
@@ -240,98 +238,86 @@ var _ = Describe("Certify with: ", func() {
 					Expect(unpublishResp).NotTo(BeNil())
 					Expect(unpublishResp.GetResult()).NotTo(BeNil())
 				})
-
 			})
 
-		})
+			Context("#DeleteVolume", func() {
+				var (
+					volID         *csi.VolumeID
+					deleteRequest *csi.DeleteVolumeRequest
+					deleteResp    *csi.DeleteVolumeResponse
+				)
 
-	})
+				Context("given a existent volume", func() {
+					JustBeforeEach(func() {
+						volID = createVolResp.GetResult().GetVolumeInfo().GetId()
+						deleteRequest = &csi.DeleteVolumeRequest{
+							Version:  version,
+							VolumeId: volID,
+						}
+						deleteResp, err = csiClient.DeleteVolume(ctx, deleteRequest)
+					})
 
-	Context("#DeleteVolume", func() {
-		var (
-			vc             []*csi.VolumeCapability
-			volName        string
-			volID          *csi.VolumeID
-			create_request *csi.CreateVolumeRequest
-			delete_request *csi.DeleteVolumeRequest
-			resp           *csi.DeleteVolumeResponse
-		)
+					It("should respond to a DeleteVolume request", func() {
+						if capabilityAddDeleteVolume {
+							Expect(err).NotTo(HaveOccurred())
+							Expect(deleteResp).NotTo(BeNil())
+							Expect(deleteResp.GetError()).To(BeNil())
+						} else {
+							Expect(err).NotTo(HaveOccurred())
+							Expect(deleteResp.GetError()).NotTo(BeNil())
+						}
+					})
+				})
 
-		BeforeEach(func() {
-			volName = fmt.Sprintf("existing-volume-%s", randomString(10))
-			volID = &csi.VolumeID{Values: map[string]string{"volume_name": volName}}
-		})
+				Context("given a non existent volume", func() {
+					JustBeforeEach(func() {
+						volID = &csi.VolumeID{Values: map[string]string{"volume_name": "non_existent_volume"}}
+						deleteRequest = &csi.DeleteVolumeRequest{
+							Version:  version,
+							VolumeId: volID,
+						}
+						deleteResp, err = csiClient.DeleteVolume(ctx, deleteRequest)
+					})
 
-		JustBeforeEach(func() {
-			delete_request = &csi.DeleteVolumeRequest{
-				Version:  version,
-				VolumeId: volID,
-			}
+					It("should fail with an error", func() {
+						if capabilityAddDeleteVolume {
+							Expect(err).NotTo(HaveOccurred())
+							Expect(deleteResp).NotTo(BeNil())
+							respError := deleteResp.GetError()
+							Expect(respError).NotTo(BeNil())
+							Expect(respError.GetDeleteVolumeError().GetErrorCode()).To(Equal(csi.Error_DeleteVolumeError_VOLUME_DOES_NOT_EXIST))
+						} else {
+							Expect(err).NotTo(HaveOccurred())
+							Expect(deleteResp.GetError()).NotTo(BeNil())
+						}
+					})
+				})
 
-			resp, err = csiClient.DeleteVolume(ctx, delete_request)
-		})
+				Context("given a invalid volume", func() {
+					JustBeforeEach(func() {
+						volID = &csi.VolumeID{Values: map[string]string{"volume_name": ""}}
+						deleteRequest = &csi.DeleteVolumeRequest{
+							Version:  version,
+							VolumeId: volID,
+						}
+						deleteResp, err = csiClient.DeleteVolume(ctx, deleteRequest)
+					})
 
-		Context("given a existent volume", func() {
-			BeforeEach(func() {
-				if capabilityAddDeleteVolume {
-					vc = []*csi.VolumeCapability{{Value: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}}}}
-					create_request = &csi.CreateVolumeRequest{
-						Version:            version,
-						Name:               volName,
-						VolumeCapabilities: vc,
-					}
-					csiClient.CreateVolume(ctx, create_request)
-				}
-			})
-
-			It("should respond to a DeleteVolume request", func() {
-				if capabilityAddDeleteVolume {
-					Expect(err).NotTo(HaveOccurred())
-					Expect(resp).NotTo(BeNil())
-					Expect(resp.GetError()).To(BeNil())
-				} else {
-					Expect(err).NotTo(HaveOccurred())
-					Expect(resp.GetError()).NotTo(BeNil())
-				}
-			})
-		})
-
-		Context("given a non existent volume", func() {
-			BeforeEach(func() {
-				volID = &csi.VolumeID{Values: map[string]string{"volume_name": "non_existent_volume"}}
-			})
-
-			It("should fail with an error", func() {
-				if capabilityAddDeleteVolume {
-					Expect(err).NotTo(HaveOccurred())
-					Expect(resp).NotTo(BeNil())
-					resp_error := resp.GetError()
-					Expect(resp_error).NotTo(BeNil())
-					Expect(resp_error.Value).To(Equal(csi.Error_DeleteVolumeError_VOLUME_DOES_NOT_EXIST))
-				} else {
-					Expect(err).NotTo(HaveOccurred())
-					Expect(resp.GetError()).NotTo(BeNil())
-				}
-			})
-		})
-
-		Context("given a invalid volume", func() {
-			BeforeEach(func() {
-				volID = &csi.VolumeID{Values: map[string]string{"volume_name": ""}}
-			})
-
-			It("should fail with an error", func() {
-				if capabilityAddDeleteVolume {
-					Expect(err).NotTo(HaveOccurred())
-					Expect(resp).NotTo(BeNil())
-					resp_error := resp.GetError()
-					Expect(resp_error).NotTo(BeNil())
-					Expect(resp_error.Value).To(Equal(csi.Error_DeleteVolumeError_INVALID_VOLUME_ID))
-				} else {
-					Expect(err).NotTo(HaveOccurred())
-					Expect(resp.GetError()).NotTo(BeNil())
-				}
+					It("should fail with an error", func() {
+						if capabilityAddDeleteVolume {
+							Expect(err).NotTo(HaveOccurred())
+							Expect(deleteResp).NotTo(BeNil())
+							respError := deleteResp.GetError()
+							Expect(respError).NotTo(BeNil())
+							Expect(respError.GetDeleteVolumeError().GetErrorCode()).To(Equal(csi.Error_DeleteVolumeError_INVALID_VOLUME_ID))
+						} else {
+							Expect(err).NotTo(HaveOccurred())
+							Expect(deleteResp.GetError()).NotTo(BeNil())
+						}
+					})
+				})
 			})
 		})
 	})
+
 })
