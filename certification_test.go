@@ -125,6 +125,31 @@ var _ = Describe("Certify with: ", func() {
 		})
 	})
 
+	Context("#GetCapacity", func() {
+		var (
+			capRequest *csi.GetCapacityRequest
+			capResp    *csi.GetCapacityResponse
+		)
+
+		BeforeEach(func() {
+			capRequest = &csi.GetCapacityRequest{
+				Version: version,
+			}
+		})
+
+		JustBeforeEach(func() {
+			capResp, err = csiClient.GetCapacity(ctx, capRequest)
+		})
+
+		It("should respond to a ControllerGetCapabilities request", func() {
+			Expect(err).NotTo(HaveOccurred())
+			Expect(capResp).NotTo(BeNil())
+			Expect(capResp.GetError()).To(BeNil())
+			Expect(capResp.GetResult()).NotTo(BeNil())
+			Expect(capResp.GetResult().GetTotalCapacity()).NotTo(BeNil())
+		})
+	})
+
 	Context("#CreateVolume", func() {
 		var (
 			volName       string
@@ -319,5 +344,4 @@ var _ = Describe("Certify with: ", func() {
 			})
 		})
 	})
-
 })
