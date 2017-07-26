@@ -1,7 +1,6 @@
 package csi_cert_test
 
 import (
-	"fmt"
 	"math/rand"
 	"os"
 	"time"
@@ -12,7 +11,10 @@ import (
 	"code.cloudfoundry.org/lager/lagertest"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	. "github.com/onsi/gomega/types"
 	"google.golang.org/grpc"
+
+	"fmt"
 
 	csi "github.com/jeffpak/csi"
 	csi_cert "github.com/paulcwarren/csi-cert"
@@ -98,6 +100,12 @@ func getContollerCapabilites() {
 	}
 }
 
+func VolumeID(volID *csi.VolumeID) GomegaMatcher {
+	return WithTransform(func(entry *csi.ListVolumesResponse_Result_Entry) *csi.VolumeID {
+		return entry.GetVolumeInfo().GetId()
+	}, Equal(volID))
+}
+
 var _ = Describe("Certify with: ", func() {
 
 	var (
@@ -156,6 +164,8 @@ var _ = Describe("Certify with: ", func() {
 					request       *csi.CreateVolumeRequest
 					createVolResp *csi.CreateVolumeResponse
 					volID         *csi.VolumeID
+					//listReq  *csi.ListVolumesRequest
+					//listResp *csi.ListVolumesResponse
 				)
 
 				BeforeEach(func() {
@@ -172,11 +182,83 @@ var _ = Describe("Certify with: ", func() {
 					createVolResp, err = csiClient.CreateVolume(ctx, request)
 				})
 
+				//AfterEach(func() {
+				//		volID = createVolResp.GetResult().GetVolumeInfo().GetId()
+				//		deleteRequest := &csi.DeleteVolumeRequest{
+				//			Version:  version,
+				//			VolumeId: volID,
+				//		}
+				//		csiClient.DeleteVolume(ctx, deleteRequest)
+				//
+				//	listReq = &csi.ListVolumesRequest{
+				//		Version: version,
+				//	}
+				//	listResp, err = csiClient.ListVolumes(ctx, listReq)
+				//	fmt.Printf("%#v",listResp.GetResult().GetEntries())
+				//	fmt.Println("-----------------------\n")
+				//
+				//	//		//Expect(err2).NotTo(HaveOccurred())
+				////		//Expect(deleteResp).NotTo(BeNil())
+				////		//Expect(deleteResp.GetError()).To(BeNil())
+				//})
+
 				It("should respond to a CreateVolume request", func() {
 					Expect(err).NotTo(HaveOccurred())
 					Expect(createVolResp).NotTo(BeNil())
 					Expect(createVolResp.GetError()).To(BeNil())
 					Expect(createVolResp.GetResult().GetVolumeInfo().GetId()).NotTo(BeNil())
+				})
+
+				if hasListVolumesCapability {
+					Context("when we list volumes", func() {
+						var (
+							listReq  *csi.ListVolumesRequest
+							listResp *csi.ListVolumesResponse
+						)
+						JustBeforeEach(func() {
+							listReq = &csi.ListVolumesRequest{
+								Version: version,
+							}
+							listResp, err = csiClient.ListVolumes(ctx, listReq)
+						})
+
+						It("should list the volume just created", func() {
+							volID = createVolResp.GetResult().GetVolumeInfo().GetId()
+							Expect(err).NotTo(HaveOccurred())
+							Expect(listResp).NotTo(BeNil())
+							Expect(listResp.GetResult().GetEntries()).To(ContainElement(VolumeID(volID)))
+						})
+					})
+				}
+
+				Context("when a volume's capabilities are validated", func() {
+					var (
+						validateVolumeRequest *csi.ValidateVolumeCapabilitiesRequest
+						validateVolumeResp    *csi.ValidateVolumeCapabilitiesResponse
+					)
+
+					JustBeforeEach(func() {
+						volInfo := createVolResp.GetResult().VolumeInfo
+						validateVolumeRequest = &csi.ValidateVolumeCapabilitiesRequest{
+							Version:    version,
+							VolumeInfo: volInfo,
+							VolumeCapabilities: []*csi.VolumeCapability{{Value: &csi.VolumeCapability_Mount{
+								Mount: &csi.VolumeCapability_MountVolume{
+									MountFlags: []string{""},
+								},
+							}}},
+						}
+						validateVolumeResp, err = csiClient.ValidateVolumeCapabilities(ctx, validateVolumeRequest)
+					})
+
+					It("should succeed", func() {
+						Expect(err).NotTo(HaveOccurred())
+						Expect(validateVolumeResp).NotTo(BeNil())
+						Expect(validateVolumeResp.GetResult()).NotTo(BeNil())
+						Expect(validateVolumeResp.GetError()).To(BeNil())
+					})
+
+					//TODO: Add some real test to test the volume can acutally do things they claimed
 				})
 
 				Context("given the volume already exists", func() {
@@ -186,6 +268,17 @@ var _ = Describe("Certify with: ", func() {
 						Expect(createVolResp).NotTo(BeNil())
 						Expect(createVolResp.GetError()).To(BeNil())
 					})
+					//AfterEach(func() {
+					//	volID = createVolResp.GetResult().GetVolumeInfo().GetId()
+					//	deleteRequest := &csi.DeleteVolumeRequest{
+					//		Version:  version,
+					//		VolumeId: volID,
+					//	}
+					//	csiClient.DeleteVolume(ctx, deleteRequest)
+					//	//Expect(err2).NotTo(HaveOccurred())
+					//	//Expect(deleteResp).NotTo(BeNil())
+					//	//Expect(deleteResp.GetError()).To(BeNil())
+					//})
 					It("should succeed", func() {
 						Expect(err).NotTo(HaveOccurred())
 						Expect(createVolResp).NotTo(BeNil())
