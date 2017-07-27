@@ -18,20 +18,6 @@ import (
 	csi_cert "github.com/paulcwarren/csi-cert"
 )
 
-func HasCapability(capResp *csi.ControllerGetCapabilitiesResponse, hasCap csi.ControllerServiceCapability_RPC_Type) bool {
-	Expect(capResp).NotTo(BeNil())
-	capResult := capResp.GetResult()
-	Expect(capResult).NotTo(BeNil())
-	capabilitySupported := false
-
-	for _, capability := range capResult.Capabilities {
-		if capability.GetRpc().GetType() == hasCap {
-			capabilitySupported = true
-		}
-	}
-	return capabilitySupported
-}
-
 var isSeeded = false
 
 func randomString(n int) string {
@@ -111,9 +97,10 @@ var _ = Describe("CSI Certification", func() {
 		testLogger          lager.Logger
 		conn                *grpc.ClientConn
 		csiControllerClient csi.ControllerClient
-		certFixture         csi_cert.CertificationFixture
-		ctx                 context.Context
-		version             *csi.Version
+
+		certFixture csi_cert.CertificationFixture
+		ctx         context.Context
+		version     *csi.Version
 	)
 
 	getContollerCapabilites()
@@ -128,7 +115,6 @@ var _ = Describe("CSI Certification", func() {
 		conn, err = grpc.Dial(certFixture.DriverAddress, grpc.WithInsecure())
 		Expect(err).NotTo(HaveOccurred())
 		csiControllerClient = csi.NewControllerClient(conn)
-
 	})
 
 	AfterEach(func() {
@@ -332,6 +318,8 @@ var _ = Describe("CSI Certification", func() {
 									})
 								})
 
+								NodeTests(conn, ctx, publishResp)
+
 								Context("when it is unpublished", func() {
 									var (
 										unpublishResp    *csi.ControllerUnpublishVolumeResponse
@@ -373,76 +361,70 @@ var _ = Describe("CSI Certification", func() {
 
 									})
 
-									// TODO: PublishNode, UnpublishNode should be tested here before deleteing volume
-									Context("when a volume is node published", func() {
-
-										Context("when a volume is node unpublished", func() {
-
-											Context("when a volume is deleted", func() {
-												var (
-													volID         *csi.VolumeID
-													deleteRequest *csi.DeleteVolumeRequest
-													deleteResp    *csi.DeleteVolumeResponse
-												)
-
-												JustBeforeEach(func() {
-													volID = createVolResp.GetResult().GetVolumeInfo().GetId()
-													deleteRequest = &csi.DeleteVolumeRequest{
-														Version:  version,
-														VolumeId: volID,
-													}
-													deleteResp, err = csiControllerClient.DeleteVolume(ctx, deleteRequest)
-												})
-
-												It("should succeeed", func() {
-													Expect(err).NotTo(HaveOccurred())
-													Expect(deleteResp).NotTo(BeNil())
-													Expect(deleteResp.GetError()).To(BeNil())
-												})
-
-												Context("when it is deleted for a second time", func() {
-													var (
-														anotherDeleteResp *csi.DeleteVolumeResponse
-													)
-													JustBeforeEach(func() {
-														anotherDeleteResp, err = csiControllerClient.DeleteVolume(ctx, deleteRequest)
-													})
-
-													It("should succeeed", func() {
-														Expect(err).NotTo(HaveOccurred())
-														Expect(anotherDeleteResp).NotTo(BeNil())
-														Expect(anotherDeleteResp.GetError()).To(BeNil())
-														Expect(anotherDeleteResp.GetResult()).To(Equal(deleteResp.GetResult()))
-													})
-												})
-
-												Context("with a invalid volume name", func() {
-													JustBeforeEach(func() {
-														volID = &csi.VolumeID{Values: map[string]string{"volume_name": ""}}
-														deleteRequest = &csi.DeleteVolumeRequest{
-															Version:  version,
-															VolumeId: volID,
-														}
-														deleteResp, err = csiControllerClient.DeleteVolume(ctx, deleteRequest)
-													})
-
-													It("should fail with an error", func() {
-														Expect(err).NotTo(HaveOccurred())
-														Expect(deleteResp).NotTo(BeNil())
-														respError := deleteResp.GetError()
-														Expect(respError).NotTo(BeNil())
-														Expect(respError.GetDeleteVolumeError().GetErrorCode()).To(Equal(csi.Error_DeleteVolumeError_INVALID_VOLUME_ID))
-													})
-												})
-											})
-
-										})
-									})
-
 								})
 							})
 						})
+					} else {
+						NodeTests(conn, ctx, nil)
 					}
+
+					Context("when a volume is deleted", func() {
+						var (
+							volID         *csi.VolumeID
+							deleteRequest *csi.DeleteVolumeRequest
+							deleteResp    *csi.DeleteVolumeResponse
+						)
+
+						JustBeforeEach(func() {
+							volID = createVolResp.GetResult().GetVolumeInfo().GetId()
+							deleteRequest = &csi.DeleteVolumeRequest{
+								Version:  version,
+								VolumeId: volID,
+							}
+							deleteResp, err = csiControllerClient.DeleteVolume(ctx, deleteRequest)
+						})
+
+						It("should succeeed", func() {
+							Expect(err).NotTo(HaveOccurred())
+							Expect(deleteResp).NotTo(BeNil())
+							Expect(deleteResp.GetError()).To(BeNil())
+						})
+
+						Context("when it is deleted for a second time", func() {
+							var (
+								anotherDeleteResp *csi.DeleteVolumeResponse
+							)
+							JustBeforeEach(func() {
+								anotherDeleteResp, err = csiControllerClient.DeleteVolume(ctx, deleteRequest)
+							})
+
+							It("should succeeed", func() {
+								Expect(err).NotTo(HaveOccurred())
+								Expect(anotherDeleteResp).NotTo(BeNil())
+								Expect(anotherDeleteResp.GetError()).To(BeNil())
+								Expect(anotherDeleteResp.GetResult()).To(Equal(deleteResp.GetResult()))
+							})
+						})
+
+						Context("with a invalid volume name", func() {
+							JustBeforeEach(func() {
+								volID = &csi.VolumeID{Values: map[string]string{"volume_name": ""}}
+								deleteRequest = &csi.DeleteVolumeRequest{
+									Version:  version,
+									VolumeId: volID,
+								}
+								deleteResp, err = csiControllerClient.DeleteVolume(ctx, deleteRequest)
+							})
+
+							It("should fail with an error", func() {
+								Expect(err).NotTo(HaveOccurred())
+								Expect(deleteResp).NotTo(BeNil())
+								respError := deleteResp.GetError()
+								Expect(respError).NotTo(BeNil())
+								Expect(respError.GetDeleteVolumeError().GetErrorCode()).To(Equal(csi.Error_DeleteVolumeError_INVALID_VOLUME_ID))
+							})
+						})
+					})
 				})
 			})
 		}
@@ -480,3 +462,27 @@ var _ = Describe("CSI Certification", func() {
 	}
 
 })
+
+func NodeTests(conn *grpc.ClientConn, ctx context.Context, publishResp *csi.ControllerPublishVolumeResponse) {
+	// TODO: PublishNode, UnpublishNode should be tested here before deleteing volume
+	Context("when a volume is node published", func() {
+		var (
+			csiNodeClient csi.NodeClient
+			nodePubReq    *csi.NodePublishVolumeRequest
+			nodePubResp   *csi.NodePublishVolumeResponse
+			err           error
+		)
+		BeforeEach(func() {
+			csiNodeClient = csi.NewNodeClient(conn)
+			nodePubReq = &csi.NodePublishVolumeRequest{}
+		})
+		JustBeforeEach(func() {
+			nodePubResp, err = csiNodeClient.NodePublishVolume(ctx, nodePubReq)
+		})
+
+		Context("when a volume is node unpublished", func() {
+
+		})
+	})
+
+}
