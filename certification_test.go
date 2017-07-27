@@ -14,7 +14,7 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 
-	csi "github.com/jeffpak/csi"
+	csi "github.com/container-storage-interface/spec"
 	csi_cert "github.com/paulcwarren/csi-cert"
 )
 
