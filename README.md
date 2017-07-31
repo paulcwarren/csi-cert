@@ -28,15 +28,16 @@ To evaluate whether the a controlle/node plugin is compliant with the RPC servic
 The CSI-Cert will evaluate whether the controller plugin is:
 
 * Responding to GetCapabilities RPC call, and run different tests according to controller's capability.
-* Responding to CreateVolume/DeleteVolume/ControllerPublishVolume/ControllerUnpublishVolume request
+* Responding to CreateVolume/DeleteVolume/ControllerPublishVolume/ControllerUnpublishVolume requests
 * Responding to CreateVolume/DeleteVolume/ControllerPublishVolume/ControllerUnpublishVolume request idempotently (Send the request for the second time will get the same response)
 * Responding with an error response to a CreateVolume/DeleteVolume request without volume name.
 * Able to list the volume been created.
 * Responding to GetCapacity request with none empty response.
-* **TODO**
 
 The CSI-Cert will evaluate whether the node plugin is 
-* **TODO**
+* Responding to NodePublishVolume/NodeUnpublishVolume requests
+* Responding to NodePublishVolume/NodeUnpublishVolume requests idempotently (Send the request for the second time will get the same response)
+* Responding with an error response to a NodePublishVolume/NodeUnpublishVolume request without volume ID.
 
 ### Non-Goals in MVP
 
@@ -45,7 +46,6 @@ The CSI-Cert will not:
 * Evaluate the usability of the Volume in CO's perspective.
 * Evaluate paging aspects of ListVolume of the controller plugin.
 * Evaluate the response of GetCapacity matches the real capacity.
-* **TODO**
 
 ## How to use
 
@@ -64,14 +64,15 @@ export GOPATH=<YOUR_GOPATH>
 export PATH=$GOPATH/bin:$GOPATH
 ```
 
-* Start the plugin you want to test.
+* Start the plugins you want to test.
 
-* Create a json file with the address/port your plugin is listening on. 
+* Create a json file with the address/port your plugins are listening on. 
 
 example:
 ```json
 {
-  "driver_address": "127.0.0.1:50051"
+  "controller_address": "127.0.0.1:50051",
+  "node_address":"127.0.0.1:50052"
 }
 ```
 
