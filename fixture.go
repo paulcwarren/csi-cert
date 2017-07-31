@@ -8,7 +8,8 @@ import (
 )
 
 type CertificationFixture struct {
-	DriverAddress string `json:"driver_address"`
+	ControllerAddress string `json:"controller_address"`
+	NodeAddress       string `json:"node_address"`
 }
 
 func LoadCertificationFixture(fileName string) (CertificationFixture, error) {
@@ -24,8 +25,11 @@ func LoadCertificationFixture(fileName string) (CertificationFixture, error) {
 	}
 
 	usr, err := user.Current()
-	if certificationFixture.DriverAddress[:2] == "~/" {
-		certificationFixture.DriverAddress = filepath.Join(usr.HomeDir, certificationFixture.DriverAddress[2:])
+	if certificationFixture.ControllerAddress[:2] == "~/" {
+		certificationFixture.ControllerAddress = filepath.Join(usr.HomeDir, certificationFixture.ControllerAddress[2:])
+	}
+	if certificationFixture.NodeAddress[:2] == "~/" {
+		certificationFixture.NodeAddress = filepath.Join(usr.HomeDir, certificationFixture.NodeAddress[2:])
 	}
 
 	if err != nil {
