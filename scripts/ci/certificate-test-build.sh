@@ -32,3 +32,8 @@ pushd ${work_dir}/go
   mv csi-cert.test ${work_dir}/binaries/csi-cert.test.windows
 popd
 
+pushd ${work_dir}/binaries/
+  tar -czvf csi-cert.test.tgz csi-cert.test.{linux,darwin,windows}
+popd
+
+
