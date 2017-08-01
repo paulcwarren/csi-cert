@@ -49,7 +49,7 @@ The CSI-Cert will not:
 
 ## How to use
 
-### Pre-requirment
+### Pre-requirement
 
 * Install [golang](https://golang.org/doc/install).
 
@@ -83,6 +83,8 @@ export FIXTURE_FILENAME=<YOUR_JSON_FILE>
 ``` 
 
 ### Run the test 
+
+#### Using go get
 ```bash
 go get github.com/paulcwarren/csi-cert
 go get github.com/onsi/ginkgo/ginkgo
@@ -90,3 +92,8 @@ pushd $GOPATH/src/github.com/paulcwarren/csi-cert
 ./scripts/go_get_all_dep.sh
 ginkgo -r -p
 ```
+
+#### Using pre-built binaries
+1. Download the [latest binary](https://github.com/paulcwarren/csi-cert/releases)
+1. Unpackage the tgz file ```tar -xzvf csi-cert.test.tgz```
+1. Run the test ```./csi-cert.test.<YOUR_OS>```
