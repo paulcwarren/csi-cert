@@ -1,0 +1,13 @@
+---
+platform: linux
+
+rootfs_uri: docker:///cloudfoundry/inigo-ci
+
+inputs:
+- name: csi-cert
+
+outputs:
+- name: binaries
+
+run:
+  path: csi-cert/scripts/ci/certificate-test-build.sh
