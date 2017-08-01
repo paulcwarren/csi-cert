@@ -1,6 +1,6 @@
 # CSI-Cert
 
-The purpose of CSI-test is to create a certification test, which can be used to test controller and node plugins, to check if they implements [Container Storage Interface(CSI)](https://github.com/container-storage-interface/spec/blob/master/spec.md) Spec. 
+The purpose of CSI-cert is to create a certification test, which can be used to test controller and node plugins, to check if they implement [Container Storage Interface(CSI)](https://github.com/container-storage-interface/spec/blob/master/spec.md) Spec. 
 
 
 
@@ -21,7 +21,7 @@ The purpose of CSI-test is to create a certification test, which can be used to 
 
 ## Objective
 
-To evaluate whether the a controlle/node plugin is compliant with the RPC service defined in CSI spec.
+To evaluate whether the controlle/node plugin is compliant with the RPC service defined in CSI spec.
 
 ### Goals in MVP
 
