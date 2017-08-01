@@ -2,6 +2,11 @@
 
 set -ex
 
+# Installing protoc
+wget https://github.com/google/protobuf/releases/download/v3.3.0/protoc-3.3.0-linux-x86_64.zip
+unzip protoc-3.3.0-linux-x86_64.zip
+mv bin/protoc /usr/bin
+
 work_dir=$(pwd)
 
 pushd csi-cert
