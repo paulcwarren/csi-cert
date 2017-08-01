@@ -9,14 +9,21 @@ mv bin/protoc /usr/bin
 
 work_dir=$(pwd)
 
-pushd csi-cert
+mkdir -p ${work_dir}/go/src/github.com/paulcwarren/
+
+pushd ${work_dir}/go
   export GOROOT=/usr/local/go
   export PATH=$GOROOT/bin:$PATH
-
   export GOPATH=$PWD
   export PATH=$PWD/bin:$PATH
 
+  go get github.com/onsi/ginkgo/ginkgo
+
+  ln -s ${work_dir}/csi-cert  src/github.com/paulcwarren/csi-cert
+
+  cd src/github.com/paulcwarren/csi-cert
   ./scripts/go_get_all_dep.sh
+
   GOOS=linux ginkgo build -r
   mv csi-cert.test ${work_dir}/binaries/csi-cert.test.linux
   GOOS=darwin ginkgo build -r
@@ -24,5 +31,4 @@ pushd csi-cert
   GOOS=windows ginkgo build -r
   mv csi-cert.test ${work_dir}/binaries/csi-cert.test.windows
 popd
-
 
