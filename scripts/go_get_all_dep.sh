@@ -13,12 +13,6 @@ go get -u "golang.org/x/net/context"
 echo "installing grpc..."
 go get -u "google.golang.org/grpc"
 echo "installing csi spec..."
-go get -u "github.com/container-storage-interface/spec">/dev/null 2>&1 || true
+go get -u "github.com/paulcwarren/csi-cert"
 
-echo "building csi proto..."
-pushd $GOPATH/src/github.com/container-storage-interface/spec
-  go get -u github.com/golang/protobuf/{proto,protoc-gen-go}
-  make csi.proto
-  make csi.pb.go
-popd
 echo "done."
