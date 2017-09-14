@@ -83,8 +83,8 @@ func getContollerCapabilites() {
 }
 
 func VolumeID(volID *csi.VolumeHandle) GomegaMatcher {
-	return WithTransform(func(entry *csi.ListVolumesResponse_Result_Entry) string {
-		return entry.GetVolumeInfo().GetHandle().GetId()
+	return WithTransform(func(entry *csi.ListVolumesResponse_Result_Entry) *csi.VolumeHandle {
+		return entry.GetVolumeInfo().GetHandle()
 	}, Equal(volID))
 }
 
