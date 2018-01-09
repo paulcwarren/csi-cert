@@ -39,8 +39,8 @@ var hasGetCapacityCapability = false
 
 var version = &csi.Version{
 	Major: 0,
-	Minor: 0,
-	Patch: 1,
+	Minor: 1,
+	Patch: 0,
 }
 
 func getContollerCapabilites() {
@@ -65,9 +65,7 @@ func getContollerCapabilites() {
 		panic(err)
 	}
 
-	capabilityResult := capabilityResp.GetResult()
-
-	for _, capability := range capabilityResult.Capabilities {
+	for _, capability := range capabilityResp.GetCapabilities() {
 		capType := capability.GetRpc().GetType()
 		switch capType {
 		case csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME:
@@ -82,9 +80,9 @@ func getContollerCapabilites() {
 	}
 }
 
-func VolumeID(volID *csi.VolumeHandle) GomegaMatcher {
-	return WithTransform(func(entry *csi.ListVolumesResponse_Result_Entry) *csi.VolumeHandle {
-		return entry.GetVolumeInfo().GetHandle()
+func VolumeID(volID string) GomegaMatcher {
+	return WithTransform(func(entry *csi.ListVolumesResponse_Entry) string {
+		return entry.GetVolumeInfo().GetId()
 	}, Equal(volID))
 }
 
@@ -144,7 +142,6 @@ var _ = Describe("CSI Certification", func() {
 						vc            []*csi.VolumeCapability
 						request       *csi.CreateVolumeRequest
 						createVolResp *csi.CreateVolumeResponse
-						volHandle     *csi.VolumeHandle
 					)
 
 					BeforeEach(func() {
@@ -162,20 +159,22 @@ var _ = Describe("CSI Certification", func() {
 					})
 
 					AfterEach(func() {
-						volHandle := createVolResp.GetResult().GetVolumeInfo().GetHandle()
+						volumeId := createVolResp.GetVolumeInfo().GetId()
 						deleteRequest := &csi.DeleteVolumeRequest{
-							Version:      version,
-							VolumeHandle: volHandle,
+							Version:  version,
+							VolumeId: volumeId,
 						}
-						_, err := csiControllerClient.DeleteVolume(ctx, deleteRequest)
-						Expect(err).NotTo(HaveOccurred())
+
+						if (volumeId != "") {
+							_, err := csiControllerClient.DeleteVolume(ctx, deleteRequest)
+							Expect(err).NotTo(HaveOccurred())
+						}
 					})
 
 					It("should succeed", func() {
 						Expect(err).NotTo(HaveOccurred())
 						Expect(createVolResp).NotTo(BeNil())
-						Expect(createVolResp.GetError()).To(BeNil())
-						Expect(createVolResp.GetResult().GetVolumeInfo().GetHandle().GetId()).NotTo(BeNil())
+						Expect(createVolResp.GetVolumeInfo().GetId()).NotTo(BeEmpty())
 					})
 
 					if hasListVolumesCapability {
@@ -193,10 +192,10 @@ var _ = Describe("CSI Certification", func() {
 								})
 
 								It("should include the volume just created", func() {
-									volHandle = createVolResp.GetResult().GetVolumeInfo().GetHandle()
+									volumeId := createVolResp.GetVolumeInfo().GetId()
 									Expect(err).NotTo(HaveOccurred())
 									Expect(listResp).NotTo(BeNil())
-									Expect(listResp.GetResult().GetEntries()).To(ContainElement(VolumeID(volHandle)))
+									Expect(listResp.GetEntries()).To(ContainElement(VolumeID(volumeId)))
 								})
 							})
 						})
@@ -209,10 +208,10 @@ var _ = Describe("CSI Certification", func() {
 						)
 
 						JustBeforeEach(func() {
-							volInfo := createVolResp.GetResult().VolumeInfo
+							volInfo := createVolResp.GetVolumeInfo()
 							validateVolumeRequest = &csi.ValidateVolumeCapabilitiesRequest{
 								Version:    version,
-								VolumeInfo: volInfo,
+								VolumeId: volInfo.GetId(),
 								VolumeCapabilities: []*csi.VolumeCapability{{AccessType: &csi.VolumeCapability_Mount{
 									Mount: &csi.VolumeCapability_MountVolume{
 										MountFlags: []string{""},
@@ -225,8 +224,6 @@ var _ = Describe("CSI Certification", func() {
 						It("should succeed", func() {
 							Expect(err).NotTo(HaveOccurred())
 							Expect(validateVolumeResp).NotTo(BeNil())
-							Expect(validateVolumeResp.GetResult()).NotTo(BeNil())
-							Expect(validateVolumeResp.GetError()).To(BeNil())
 						})
 
 						//TODO: Add some real test to test the volume can acutally do things they claimed
@@ -241,11 +238,10 @@ var _ = Describe("CSI Certification", func() {
 							anotherCreateVolResp, err = csiControllerClient.CreateVolume(ctx, request)
 						})
 
-						It("should succeed", func() {
+						It("should succeed and return the same id and metadata", func() {
 							Expect(err).NotTo(HaveOccurred())
 							Expect(anotherCreateVolResp).NotTo(BeNil())
-							Expect(anotherCreateVolResp.GetError()).To(BeNil())
-							Expect(anotherCreateVolResp.GetResult()).To(Equal(createVolResp.GetResult()))
+							Expect(anotherCreateVolResp).To(Equal(createVolResp))
 						})
 					})
 
@@ -260,8 +256,7 @@ var _ = Describe("CSI Certification", func() {
 						})
 
 						It("should fail with an error", func() {
-							Expect(err).NotTo(HaveOccurred())
-							Expect(createVolResp.GetError()).NotTo(BeNil())
+							Expect(err).To(HaveOccurred())
 						})
 					})
 
@@ -274,19 +269,20 @@ var _ = Describe("CSI Certification", func() {
 								)
 
 								JustBeforeEach(func() {
-									volHandle = createVolResp.GetResult().VolumeInfo.GetHandle()
+									volumeId := createVolResp.GetVolumeInfo().GetId()
 									publishRequest = &csi.ControllerPublishVolumeRequest{
 										Version:      version,
-										VolumeHandle: volHandle,
+										VolumeId:	volumeId,
 										Readonly:     false,
 									}
 									publishResp, err = csiControllerClient.ControllerPublishVolume(ctx, publishRequest)
 								})
 
 								AfterEach(func() {
+									volumeId := createVolResp.GetVolumeInfo().GetId()
 									unpublishRequest := &csi.ControllerUnpublishVolumeRequest{
 										Version:      version,
-										VolumeHandle: volHandle,
+										VolumeId:	volumeId,
 									}
 									_, err := csiControllerClient.ControllerUnpublishVolume(ctx, unpublishRequest)
 									Expect(err).NotTo(HaveOccurred())
@@ -295,7 +291,6 @@ var _ = Describe("CSI Certification", func() {
 								It("should succeed", func() {
 									Expect(err).NotTo(HaveOccurred())
 									Expect(publishResp).NotTo(BeNil())
-									Expect(publishResp.GetResult().GetPublishVolumeInfo()).NotTo(BeNil())
 								})
 
 								Context("when it is published for a second time", func() {
@@ -304,15 +299,13 @@ var _ = Describe("CSI Certification", func() {
 									)
 
 									JustBeforeEach(func() {
-										volHandle = createVolResp.GetResult().VolumeInfo.GetHandle()
 										anotherPublishResp, err = csiControllerClient.ControllerPublishVolume(ctx, publishRequest)
 									})
 
 									It("should succeed", func() {
 										Expect(err).NotTo(HaveOccurred())
 										Expect(anotherPublishResp).NotTo(BeNil())
-										Expect(anotherPublishResp.GetResult().GetPublishVolumeInfo()).NotTo(BeNil())
-										Expect(anotherPublishResp.GetResult()).To(Equal(publishResp.GetResult()))
+										Expect(anotherPublishResp).To(Equal(publishResp))
 									})
 								})
 
@@ -325,9 +318,10 @@ var _ = Describe("CSI Certification", func() {
 									)
 
 									BeforeEach(func() {
+										volumeId := createVolResp.GetVolumeInfo().GetId()
 										unpublishRequest = &csi.ControllerUnpublishVolumeRequest{
 											Version:      version,
-											VolumeHandle: volHandle,
+											VolumeId: volumeId,
 										}
 									})
 
@@ -338,7 +332,6 @@ var _ = Describe("CSI Certification", func() {
 									It("should succeed", func() {
 										Expect(err).NotTo(HaveOccurred())
 										Expect(unpublishResp).NotTo(BeNil())
-										Expect(unpublishResp.GetResult()).NotTo(BeNil())
 									})
 
 									Context("when it is unpublished for the second time", func() {
@@ -353,8 +346,7 @@ var _ = Describe("CSI Certification", func() {
 										It("should succeed", func() {
 											Expect(err).NotTo(HaveOccurred())
 											Expect(anotherUnpublishResp).NotTo(BeNil())
-											Expect(anotherUnpublishResp.GetResult()).NotTo(BeNil())
-											Expect(anotherUnpublishResp.GetResult()).To(Equal(unpublishResp.GetResult()))
+											Expect(anotherUnpublishResp).To(Equal(unpublishResp))
 										})
 
 									})
@@ -368,16 +360,16 @@ var _ = Describe("CSI Certification", func() {
 
 					Context("when a volume is deleted", func() {
 						var (
-							volHandle     *csi.VolumeHandle
+							volumeId      string
 							deleteRequest *csi.DeleteVolumeRequest
 							deleteResp    *csi.DeleteVolumeResponse
 						)
 
 						JustBeforeEach(func() {
-							volHandle = createVolResp.GetResult().GetVolumeInfo().GetHandle()
+							volumeId = createVolResp.GetVolumeInfo().GetId()
 							deleteRequest = &csi.DeleteVolumeRequest{
 								Version:      version,
-								VolumeHandle: volHandle,
+								VolumeId: volumeId,
 							}
 							deleteResp, err = csiControllerClient.DeleteVolume(ctx, deleteRequest)
 						})
@@ -385,7 +377,6 @@ var _ = Describe("CSI Certification", func() {
 						It("should succeeed", func() {
 							Expect(err).NotTo(HaveOccurred())
 							Expect(deleteResp).NotTo(BeNil())
-							Expect(deleteResp.GetError()).To(BeNil())
 						})
 
 						Context("when it is deleted for a second time", func() {
@@ -399,27 +390,22 @@ var _ = Describe("CSI Certification", func() {
 							It("should succeeed", func() {
 								Expect(err).NotTo(HaveOccurred())
 								Expect(anotherDeleteResp).NotTo(BeNil())
-								Expect(anotherDeleteResp.GetError()).To(BeNil())
-								Expect(anotherDeleteResp.GetResult()).To(Equal(deleteResp.GetResult()))
+								Expect(anotherDeleteResp).To(Equal(deleteResp))
 							})
 						})
 
-						Context("with a invalid volume name", func() {
+						Context("with a invalid volume id", func() {
 							JustBeforeEach(func() {
-								volHandle = &csi.VolumeHandle{Id: ""}
 								deleteRequest = &csi.DeleteVolumeRequest{
 									Version:      version,
-									VolumeHandle: volHandle,
+									VolumeId: "",
 								}
 								deleteResp, err = csiControllerClient.DeleteVolume(ctx, deleteRequest)
 							})
 
 							It("should fail with an error", func() {
-								Expect(err).NotTo(HaveOccurred())
-								Expect(deleteResp).NotTo(BeNil())
-								respError := deleteResp.GetError()
-								Expect(respError).NotTo(BeNil())
-								Expect(respError.GetDeleteVolumeError().GetErrorCode()).To(Equal(csi.Error_DeleteVolumeError_INVALID_VOLUME_HANDLE))
+								Expect(err).To(HaveOccurred())
+								// TODO - the spec does not call out an error for this, but probably we should see a grpc InvalidArgument error?
 							})
 						})
 					})
@@ -449,9 +435,7 @@ var _ = Describe("CSI Certification", func() {
 				It("should succeed and return a valid capacity", func() {
 					Expect(err).NotTo(HaveOccurred())
 					Expect(capResp).NotTo(BeNil())
-					Expect(capResp.GetError()).To(BeNil())
-					Expect(capResp.GetResult()).NotTo(BeNil())
-					Expect(capResp.GetResult().GetAvailableCapacity()).NotTo(BeNil())
+					Expect(capResp.GetAvailableCapacity()).NotTo(BeNil())
 				})
 			})
 
@@ -471,10 +455,13 @@ func NodeTests(conn *grpc.ClientConn) {
 			nodePubReq    *csi.NodePublishVolumeRequest
 			nodePubResp   *csi.NodePublishVolumeResponse
 			volName       string
-			volHandle     *csi.VolumeHandle
 			targetPath    string
-			volCapability *csi.VolumeCapability
 			readOnly      bool
+
+			volumeId     string
+			volumeAttributes map[string]string
+			publishVolumeInfo map[string]string
+			volCapability *csi.VolumeCapability
 		)
 		BeforeEach(func() {
 			fileName := os.Getenv("FIXTURE_FILENAME")
@@ -492,7 +479,11 @@ func NodeTests(conn *grpc.ClientConn) {
 			targetPath = fmt.Sprintf("/tmp/_mounts/%s", volName)
 			osErr := os.MkdirAll("/tmp/_mounts", os.ModePerm)
 			Expect(osErr).NotTo(HaveOccurred())
-			volHandle = &csi.VolumeHandle{Id: volName}
+
+			// TODO--THIS IS VERY WRONG! WE SHOULD GET THIS FROM THE CONTROLLER CREATE CALL
+			volumeId = volName
+			volumeAttributes = map[string]string{}
+			publishVolumeInfo = map[string]string{}
 			volCapability = &csi.VolumeCapability{
 				AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{MountFlags: []string{}}},
 			}
@@ -501,8 +492,9 @@ func NodeTests(conn *grpc.ClientConn) {
 		JustBeforeEach(func() {
 			nodePubReq = &csi.NodePublishVolumeRequest{
 				Version:           version,
-				VolumeHandle:      volHandle,
-				PublishVolumeInfo: &csi.PublishVolumeInfo{Values: map[string]string{}},
+				VolumeId:      volumeId,
+				VolumeAttributes: volumeAttributes,
+				PublishVolumeInfo: publishVolumeInfo,
 				TargetPath:        targetPath,
 				VolumeCapability:  volCapability,
 				Readonly:          readOnly,
@@ -514,8 +506,6 @@ func NodeTests(conn *grpc.ClientConn) {
 		It("should succeed", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(nodePubResp).NotTo(BeNil())
-			Expect(nodePubResp.GetError()).To(BeNil())
-			Expect(nodePubResp.GetResult()).NotTo(BeNil())
 		})
 
 		Context("given the volume is node published a second time", func() {
@@ -527,22 +517,20 @@ func NodeTests(conn *grpc.ClientConn) {
 				anotherNodePubResp, err = csiNodeClient.NodePublishVolume(ctx, nodePubReq)
 			})
 
-			It("should succeed", func() {
+			It("should succeed and return the same response", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(anotherNodePubResp).NotTo(BeNil())
-				Expect(anotherNodePubResp.GetError()).To(BeNil())
-				Expect(anotherNodePubResp.GetResult()).To(Equal(nodePubResp.GetResult()))
+				Expect(anotherNodePubResp).To(Equal(nodePubResp))
 			})
 		})
 
 		Context("with an invalid request (no volume id)", func() {
 			BeforeEach(func() {
-				volHandle = nil
+				volumeId = ""
 			})
 
 			It("should fail with an error", func() {
-				Expect(err).NotTo(HaveOccurred())
-				Expect(nodePubResp.GetError()).NotTo(BeNil())
+				Expect(err).To(HaveOccurred())
 			})
 		})
 
@@ -552,8 +540,7 @@ func NodeTests(conn *grpc.ClientConn) {
 			})
 
 			It("should fail with an error", func() {
-				Expect(err).NotTo(HaveOccurred())
-				Expect(nodePubResp.GetError()).NotTo(BeNil())
+				Expect(err).To(HaveOccurred())
 			})
 		})
 
@@ -563,21 +550,20 @@ func NodeTests(conn *grpc.ClientConn) {
 			})
 
 			It("should fail with an error", func() {
-				Expect(err).NotTo(HaveOccurred())
-				Expect(nodePubResp.GetError()).NotTo(BeNil())
+				Expect(err).To(HaveOccurred())
 			})
 		})
 
 		Context("when a volume is node unpublished", func() {
 			var (
 				nodeUnpubReq  *csi.NodeUnpublishVolumeRequest
-				nodeUnpubResp *csi.NodeUnpublishVolumeResponse
+				nodeUnpubResp, anotherUnpubResp *csi.NodeUnpublishVolumeResponse
 			)
 
 			BeforeEach(func() {
 				nodeUnpubReq = &csi.NodeUnpublishVolumeRequest{
 					Version:      version,
-					VolumeHandle: volHandle,
+					VolumeId: volumeId,
 					TargetPath:   targetPath,
 				}
 			})
@@ -588,21 +574,17 @@ func NodeTests(conn *grpc.ClientConn) {
 
 			It("should succeed", func() {
 				Expect(err).NotTo(HaveOccurred())
-				Expect(nodeUnpubResp.GetError()).To(BeNil())
 			})
 
 			Context("given the volume is node unpublished a second time", func() {
-				BeforeEach(func() {
-					nodeUnpubReq = &csi.NodeUnpublishVolumeRequest{
-						Version:      version,
-						VolumeHandle: volHandle,
-						TargetPath:   targetPath,
-					}
+				JustBeforeEach(func() {
+					anotherUnpubResp, err = csiNodeClient.NodeUnpublishVolume(ctx, nodeUnpubReq)
 				})
+
 
 				It("should succeed", func() {
 					Expect(err).NotTo(HaveOccurred())
-					Expect(nodeUnpubResp.GetError()).To(BeNil())
+					Expect(anotherUnpubResp).To(Equal(nodeUnpubResp))
 				})
 			})
 			Context("with an invalid request (no volume id)", func() {
@@ -614,8 +596,7 @@ func NodeTests(conn *grpc.ClientConn) {
 				})
 
 				It("should fail with an error", func() {
-					Expect(err).NotTo(HaveOccurred())
-					Expect(nodeUnpubResp.GetError()).NotTo(BeNil())
+					Expect(err).To(HaveOccurred())
 				})
 			})
 
@@ -623,13 +604,12 @@ func NodeTests(conn *grpc.ClientConn) {
 				BeforeEach(func() {
 					nodeUnpubReq = &csi.NodeUnpublishVolumeRequest{
 						Version:      version,
-						VolumeHandle: volHandle,
+						VolumeId: 		volumeId,
 					}
 				})
 
 				It("should fail with an error", func() {
-					Expect(err).NotTo(HaveOccurred())
-					Expect(nodeUnpubResp.GetError()).NotTo(BeNil())
+					Expect(err).To(HaveOccurred())
 				})
 			})
 		})
