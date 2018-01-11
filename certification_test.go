@@ -470,7 +470,7 @@ func NodeTests(conn *grpc.ClientConn) {
 			JustBeforeEach(func(){
 				resp, err = csiNodeClient.NodeProbe(ctx,&csi.NodeProbeRequest{Version: version})
 			})
-			FIt("should succeed", func(){
+			It("should succeed", func(){
 				Expect(err).ToNot(HaveOccurred())
 				Expect(resp).ToNot(BeNil())
 			})
