@@ -115,6 +115,17 @@ var _ = Describe("CSI Certification", func() {
 		Expect(err).NotTo(HaveOccurred())
 	})
 
+	Context("when the controller is probed", func(){
+		var resp *csi.ControllerProbeResponse
+		JustBeforeEach(func(){
+			resp, err = csiControllerClient.ControllerProbe(ctx, &csi.ControllerProbeRequest{Version: version})
+		})
+		It("should succeed", func(){
+			Expect(err).ToNot(HaveOccurred())
+			Expect(resp).ToNot(BeNil())
+		})
+	})
+
 	Context("when the plugin's capabilities are fetched", func() {
 		var (
 			capabilityRequest *csi.ControllerGetCapabilitiesRequest
