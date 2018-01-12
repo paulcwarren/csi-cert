@@ -320,7 +320,7 @@ var _ = Describe("CSI Certification", func() {
 									})
 								})
 
-								NodeTests(conn)
+								NodeTests(conn, createVolResp, publishResp)
 
 								Context("when it is unpublished", func() {
 									var (
@@ -456,7 +456,7 @@ var _ = Describe("CSI Certification", func() {
 
 })
 
-func NodeTests(conn *grpc.ClientConn) {
+func NodeTests(conn *grpc.ClientConn, createVolResp *csi.CreateVolumeResponse, publishVolResp *csi.ControllerPublishVolumeResponse) {
 	Context("given a node plugin", func() {
 		var (
 			err           error
@@ -507,10 +507,9 @@ func NodeTests(conn *grpc.ClientConn) {
 				osErr := os.MkdirAll("/tmp/_mounts", os.ModePerm)
 				Expect(osErr).NotTo(HaveOccurred())
 
-				// TODO--THIS IS VERY WRONG! WE SHOULD GET THIS FROM THE CONTROLLER CREATE CALL
-				volumeId = volName
-				volumeAttributes = map[string]string{}
-				publishVolumeInfo = map[string]string{}
+				volumeId = createVolResp.GetVolumeInfo().GetId()
+				volumeAttributes = createVolResp.GetVolumeInfo().GetAttributes()
+				publishVolumeInfo = publishVolResp.GetPublishVolumeInfo()
 				volCapability = &csi.VolumeCapability{
 					AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{MountFlags: []string{}}},
 				}
