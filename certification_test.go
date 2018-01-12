@@ -366,7 +366,7 @@ var _ = Describe("CSI Certification", func() {
 							})
 						})
 					} else {
-						NodeTests(conn)
+						NodeTests(conn, createVolResp, &csi.ControllerPublishVolumeResponse{PublishVolumeInfo: map[string]string{}})
 					}
 
 					Context("when a volume is deleted", func() {
