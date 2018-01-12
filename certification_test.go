@@ -320,7 +320,8 @@ var _ = Describe("CSI Certification", func() {
 									})
 								})
 
-								NodeTests(conn, createVolResp, publishResp)
+								volInfo := createVolResp.GetVolumeInfo()
+								NodeTests(conn, volInfo.GetId(), volInfo.GetAttributes(), publishResp.GetPublishVolumeInfo())
 
 								Context("when it is unpublished", func() {
 									var (
@@ -366,7 +367,8 @@ var _ = Describe("CSI Certification", func() {
 							})
 						})
 					} else {
-						NodeTests(conn, createVolResp, &csi.ControllerPublishVolumeResponse{PublishVolumeInfo: map[string]string{}})
+						volInfo := createVolResp.GetVolumeInfo()
+						NodeTests(conn, volInfo.GetId(), volInfo.GetAttributes(), map[string]string{})
 					}
 
 					Context("when a volume is deleted", func() {
@@ -456,7 +458,7 @@ var _ = Describe("CSI Certification", func() {
 
 })
 
-func NodeTests(conn *grpc.ClientConn, createVolResp *csi.CreateVolumeResponse, publishVolResp *csi.ControllerPublishVolumeResponse) {
+func NodeTests(conn *grpc.ClientConn, volID string, volAttrs map[string]string, publishVolInfo map[string]string) {
 	Context("given a node plugin", func() {
 		var (
 			err           error
@@ -507,9 +509,9 @@ func NodeTests(conn *grpc.ClientConn, createVolResp *csi.CreateVolumeResponse, p
 				osErr := os.MkdirAll("/tmp/_mounts", os.ModePerm)
 				Expect(osErr).NotTo(HaveOccurred())
 
-				volumeId = createVolResp.GetVolumeInfo().GetId()
-				volumeAttributes = createVolResp.GetVolumeInfo().GetAttributes()
-				publishVolumeInfo = publishVolResp.GetPublishVolumeInfo()
+				volumeId = volID
+				volumeAttributes = volAttrs
+				publishVolumeInfo = publishVolInfo
 				volCapability = &csi.VolumeCapability{
 					AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{MountFlags: []string{}}},
 				}
