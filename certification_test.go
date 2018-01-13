@@ -325,6 +325,9 @@ var _ = Describe("CSI Certification", func() {
 								osErr := os.MkdirAll("/tmp/_mounts", os.ModePerm)
 								Expect(osErr).NotTo(HaveOccurred())
 
+								volumeId = createVolResp.GetVolumeInfo().GetId()
+								volumeAttributes = createVolResp.GetVolumeInfo().GetAttributes()
+								publishVolumeInfo = map[string]string{}
 								volCapability = &csi.VolumeCapability{
 									AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{MountFlags: []string{}}},
 								}
@@ -341,11 +344,8 @@ var _ = Describe("CSI Certification", func() {
 									Expect(err).NotTo(HaveOccurred())
 									Expect(controllerPublishResp).NotTo(BeNil())
 									publishVolumeInfo = controllerPublishResp.GetPublishVolumeInfo()
-								} else {
-									publishVolumeInfo = map[string]string{}
 								}
-								volumeId = createVolResp.GetVolumeInfo().GetId()
-								volumeAttributes = createVolResp.GetVolumeInfo().GetAttributes()
+
 								nodePubReq = &csi.NodePublishVolumeRequest{
 									Version:           version,
 									VolumeId:          volumeId,
@@ -380,6 +380,12 @@ var _ = Describe("CSI Certification", func() {
 								var (
 									anotherNodePubResp *csi.NodePublishVolumeResponse
 								)
+
+								BeforeEach(func() {
+									volumeId = createVolResp.GetVolumeInfo().GetId()
+									volumeAttributes = createVolResp.GetVolumeInfo().GetAttributes()
+									publishVolumeInfo = map[string]string{}
+								})
 
 								JustBeforeEach(func() {
 									anotherNodePubResp, err = csiNodeClient.NodePublishVolume(ctx, nodePubReq)
