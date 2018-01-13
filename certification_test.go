@@ -271,6 +271,218 @@ var _ = Describe("CSI Certification", func() {
 						})
 					})
 
+					Context("given a node plugin", func() {
+						var (
+							err           error
+							ctx           context.Context
+							csiNodeClient csi.NodeClient
+						)
+
+						BeforeEach(func(){
+							fileName := os.Getenv("FIXTURE_FILENAME")
+							certFixture, err := csi_cert.LoadCertificationFixture(fileName)
+							if err != nil {
+								panic(err)
+							}
+							conn, err := grpc.Dial(certFixture.NodeAddress, grpc.WithInsecure())
+							Expect(err).ToNot(HaveOccurred())
+							csiNodeClient = csi.NewNodeClient(conn)
+							ctx = context.Background()
+						})
+
+						Context("when a node is probed", func(){
+							var resp *csi.NodeProbeResponse
+							JustBeforeEach(func(){
+								resp, err = csiNodeClient.NodeProbe(ctx,&csi.NodeProbeRequest{Version: version})
+							})
+							It("should succeed", func(){
+								Expect(err).ToNot(HaveOccurred())
+								Expect(resp).ToNot(BeNil())
+							})
+						})
+
+						// TODO: PublishNode, UnpublishNode should be tested here before deleteing volume
+						Context("when a volume is node published", func() {
+							var (
+								nodePubReq    *csi.NodePublishVolumeRequest
+								nodePubResp   *csi.NodePublishVolumeResponse
+								volName       string
+								targetPath    string
+								readOnly      bool
+
+								volumeId          string
+								volumeAttributes  map[string]string
+								publishVolumeInfo map[string]string
+								volCapability     *csi.VolumeCapability
+
+								controllerPublishRequest *csi.ControllerPublishVolumeRequest
+								controllerPublishResp    *csi.ControllerPublishVolumeResponse
+							)
+
+							BeforeEach(func() {
+								volName = fmt.Sprintf("node-volume-%s", randomString(5))
+								targetPath = fmt.Sprintf("/tmp/_mounts/%s", volName)
+								osErr := os.MkdirAll("/tmp/_mounts", os.ModePerm)
+								Expect(osErr).NotTo(HaveOccurred())
+
+								volumeId = createVolResp.GetVolumeInfo().GetId()
+								volumeAttributes = createVolResp.GetVolumeInfo().GetAttributes()
+								publishVolumeInfo = map[string]string{}
+								volCapability = &csi.VolumeCapability{
+									AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{MountFlags: []string{}}},
+								}
+							})
+
+							JustBeforeEach(func() {
+								if hasPublishUnpublishCapability {
+									controllerPublishRequest = &csi.ControllerPublishVolumeRequest{
+										Version:  version,
+										VolumeId: volumeId,
+										Readonly: false,
+									}
+									controllerPublishResp, err = csiControllerClient.ControllerPublishVolume(ctx, controllerPublishRequest)
+									Expect(err).NotTo(HaveOccurred())
+									Expect(controllerPublishResp).NotTo(BeNil())
+									publishVolumeInfo = controllerPublishResp.GetPublishVolumeInfo()
+								}
+
+								nodePubReq = &csi.NodePublishVolumeRequest{
+									Version:           version,
+									VolumeId:          volumeId,
+									VolumeAttributes:  volumeAttributes,
+									PublishVolumeInfo: publishVolumeInfo,
+									TargetPath:        targetPath,
+									VolumeCapability:  volCapability,
+									Readonly:          readOnly,
+								}
+
+								nodePubResp, err = csiNodeClient.NodePublishVolume(ctx, nodePubReq)
+							})
+
+							AfterEach(func() {
+								if hasPublishUnpublishCapability {
+									volumeId := createVolResp.GetVolumeInfo().GetId()
+									unpublishRequest := &csi.ControllerUnpublishVolumeRequest{
+										Version:  version,
+										VolumeId: volumeId,
+									}
+									_, err := csiControllerClient.ControllerUnpublishVolume(ctx, unpublishRequest)
+									Expect(err).NotTo(HaveOccurred())
+								}
+							})
+
+							It("should succeed", func() {
+								Expect(err).NotTo(HaveOccurred())
+								Expect(nodePubResp).NotTo(BeNil())
+							})
+
+							Context("given the volume is node published a second time", func() {
+								var (
+									anotherNodePubResp *csi.NodePublishVolumeResponse
+								)
+
+								JustBeforeEach(func() {
+									anotherNodePubResp, err = csiNodeClient.NodePublishVolume(ctx, nodePubReq)
+								})
+
+								It("should succeed and return the same response", func() {
+									Expect(err).NotTo(HaveOccurred())
+									Expect(anotherNodePubResp).NotTo(BeNil())
+									Expect(anotherNodePubResp).To(Equal(nodePubResp))
+								})
+							})
+
+							Context("with an invalid request (no volume id)", func() {
+								BeforeEach(func() {
+									volumeId = ""
+								})
+
+								It("should fail with an error", func() {
+									Expect(err).To(HaveOccurred())
+								})
+							})
+
+							Context("with an invalid request (no volume capability)", func() {
+								BeforeEach(func() {
+									volCapability = nil
+								})
+
+								It("should fail with an error", func() {
+									Expect(err).To(HaveOccurred())
+								})
+							})
+
+							Context("with an invalid request (empty volume capability)", func() {
+								BeforeEach(func() {
+									volCapability = &csi.VolumeCapability{}
+								})
+
+								It("should fail with an error", func() {
+									Expect(err).To(HaveOccurred())
+								})
+							})
+
+							Context("when a volume is node unpublished", func() {
+								var (
+									nodeUnpubReq                    *csi.NodeUnpublishVolumeRequest
+									nodeUnpubResp, anotherUnpubResp *csi.NodeUnpublishVolumeResponse
+								)
+
+								BeforeEach(func() {
+									nodeUnpubReq = &csi.NodeUnpublishVolumeRequest{
+										Version:    version,
+										VolumeId:   volumeId,
+										TargetPath: targetPath,
+									}
+								})
+
+								JustBeforeEach(func() {
+									nodeUnpubResp, err = csiNodeClient.NodeUnpublishVolume(ctx, nodeUnpubReq)
+								})
+
+								It("should succeed", func() {
+									Expect(err).NotTo(HaveOccurred())
+								})
+
+								Context("given the volume is node unpublished a second time", func() {
+									JustBeforeEach(func() {
+										anotherUnpubResp, err = csiNodeClient.NodeUnpublishVolume(ctx, nodeUnpubReq)
+									})
+
+									It("should succeed", func() {
+										Expect(err).NotTo(HaveOccurred())
+										Expect(anotherUnpubResp).To(Equal(nodeUnpubResp))
+									})
+								})
+								Context("with an invalid request (no volume id)", func() {
+									BeforeEach(func() {
+										nodeUnpubReq = &csi.NodeUnpublishVolumeRequest{
+											Version:    version,
+											TargetPath: targetPath,
+										}
+									})
+
+									It("should fail with an error", func() {
+										Expect(err).To(HaveOccurred())
+									})
+								})
+
+								Context("with an invalid request (no target path)", func() {
+									BeforeEach(func() {
+										nodeUnpubReq = &csi.NodeUnpublishVolumeRequest{
+											Version:  version,
+											VolumeId: volumeId,
+										}
+									})
+
+									It("should fail with an error", func() {
+										Expect(err).To(HaveOccurred())
+									})
+								})
+							})
+						})
+					})
+
 					if hasPublishUnpublishCapability {
 						Context("given it supports the PUBLISH_UNPUBLISH_VOLUME capability", func() {
 							Context("when a volume is published", func() {
@@ -320,9 +532,6 @@ var _ = Describe("CSI Certification", func() {
 									})
 								})
 
-								volInfo := createVolResp.GetVolumeInfo()
-								NodeTests(conn, volInfo.GetId(), volInfo.GetAttributes(), publishResp.GetPublishVolumeInfo())
-
 								Context("when it is unpublished", func() {
 									var (
 										unpublishResp    *csi.ControllerUnpublishVolumeResponse
@@ -360,15 +569,10 @@ var _ = Describe("CSI Certification", func() {
 											Expect(anotherUnpublishResp).NotTo(BeNil())
 											Expect(anotherUnpublishResp).To(Equal(unpublishResp))
 										})
-
 									})
-
 								})
 							})
 						})
-					} else {
-						volInfo := createVolResp.GetVolumeInfo()
-						NodeTests(conn, volInfo.GetId(), volInfo.GetAttributes(), map[string]string{})
 					}
 
 					Context("when a volume is deleted", func() {
@@ -457,189 +661,3 @@ var _ = Describe("CSI Certification", func() {
 	}
 
 })
-
-func NodeTests(conn *grpc.ClientConn, volID string, volAttrs map[string]string, publishVolInfo map[string]string) {
-	Context("given a node plugin", func() {
-		var (
-			err           error
-			ctx           context.Context
-			csiNodeClient csi.NodeClient
-		)
-
-		BeforeEach(func(){
-			fileName := os.Getenv("FIXTURE_FILENAME")
-			certFixture, err := csi_cert.LoadCertificationFixture(fileName)
-			if err != nil {
-				panic(err)
-			}
-			conn, err := grpc.Dial(certFixture.NodeAddress, grpc.WithInsecure())
-			Expect(err).ToNot(HaveOccurred())
-			csiNodeClient = csi.NewNodeClient(conn)
-			ctx = context.Background()
-		})
-
-		Context("when a node is probed", func(){
-			var resp *csi.NodeProbeResponse
-			JustBeforeEach(func(){
-				resp, err = csiNodeClient.NodeProbe(ctx,&csi.NodeProbeRequest{Version: version})
-			})
-			It("should succeed", func(){
-				Expect(err).ToNot(HaveOccurred())
-				Expect(resp).ToNot(BeNil())
-			})
-		})
-
-		// TODO: PublishNode, UnpublishNode should be tested here before deleteing volume
-		Context("when a volume is node published", func() {
-			var (
-				nodePubReq    *csi.NodePublishVolumeRequest
-				nodePubResp   *csi.NodePublishVolumeResponse
-				volName       string
-				targetPath    string
-				readOnly      bool
-
-				volumeId          string
-				volumeAttributes  map[string]string
-				publishVolumeInfo map[string]string
-				volCapability     *csi.VolumeCapability
-			)
-			BeforeEach(func() {
-				volName = fmt.Sprintf("node-volume-%s", randomString(5))
-				targetPath = fmt.Sprintf("/tmp/_mounts/%s", volName)
-				osErr := os.MkdirAll("/tmp/_mounts", os.ModePerm)
-				Expect(osErr).NotTo(HaveOccurred())
-
-				volumeId = volID
-				volumeAttributes = volAttrs
-				publishVolumeInfo = publishVolInfo
-				volCapability = &csi.VolumeCapability{
-					AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{MountFlags: []string{}}},
-				}
-			})
-
-			JustBeforeEach(func() {
-				nodePubReq = &csi.NodePublishVolumeRequest{
-					Version:           version,
-					VolumeId:          volumeId,
-					VolumeAttributes:  volumeAttributes,
-					PublishVolumeInfo: publishVolumeInfo,
-					TargetPath:        targetPath,
-					VolumeCapability:  volCapability,
-					Readonly:          readOnly,
-				}
-
-				nodePubResp, err = csiNodeClient.NodePublishVolume(ctx, nodePubReq)
-			})
-
-			It("should succeed", func() {
-				Expect(err).NotTo(HaveOccurred())
-				Expect(nodePubResp).NotTo(BeNil())
-			})
-
-			Context("given the volume is node published a second time", func() {
-				var (
-					anotherNodePubResp *csi.NodePublishVolumeResponse
-				)
-
-				JustBeforeEach(func() {
-					anotherNodePubResp, err = csiNodeClient.NodePublishVolume(ctx, nodePubReq)
-				})
-
-				It("should succeed and return the same response", func() {
-					Expect(err).NotTo(HaveOccurred())
-					Expect(anotherNodePubResp).NotTo(BeNil())
-					Expect(anotherNodePubResp).To(Equal(nodePubResp))
-				})
-			})
-
-			Context("with an invalid request (no volume id)", func() {
-				BeforeEach(func() {
-					volumeId = ""
-				})
-
-				It("should fail with an error", func() {
-					Expect(err).To(HaveOccurred())
-				})
-			})
-
-			Context("with an invalid request (no volume capability)", func() {
-				BeforeEach(func() {
-					volCapability = nil
-				})
-
-				It("should fail with an error", func() {
-					Expect(err).To(HaveOccurred())
-				})
-			})
-
-			Context("with an invalid request (empty volume capability)", func() {
-				BeforeEach(func() {
-					volCapability = &csi.VolumeCapability{}
-				})
-
-				It("should fail with an error", func() {
-					Expect(err).To(HaveOccurred())
-				})
-			})
-
-			Context("when a volume is node unpublished", func() {
-				var (
-					nodeUnpubReq                    *csi.NodeUnpublishVolumeRequest
-					nodeUnpubResp, anotherUnpubResp *csi.NodeUnpublishVolumeResponse
-				)
-
-				BeforeEach(func() {
-					nodeUnpubReq = &csi.NodeUnpublishVolumeRequest{
-						Version:    version,
-						VolumeId:   volumeId,
-						TargetPath: targetPath,
-					}
-				})
-
-				JustBeforeEach(func() {
-					nodeUnpubResp, err = csiNodeClient.NodeUnpublishVolume(ctx, nodeUnpubReq)
-				})
-
-				It("should succeed", func() {
-					Expect(err).NotTo(HaveOccurred())
-				})
-
-				Context("given the volume is node unpublished a second time", func() {
-					JustBeforeEach(func() {
-						anotherUnpubResp, err = csiNodeClient.NodeUnpublishVolume(ctx, nodeUnpubReq)
-					})
-
-					It("should succeed", func() {
-						Expect(err).NotTo(HaveOccurred())
-						Expect(anotherUnpubResp).To(Equal(nodeUnpubResp))
-					})
-				})
-				Context("with an invalid request (no volume id)", func() {
-					BeforeEach(func() {
-						nodeUnpubReq = &csi.NodeUnpublishVolumeRequest{
-							Version:    version,
-							TargetPath: targetPath,
-						}
-					})
-
-					It("should fail with an error", func() {
-						Expect(err).To(HaveOccurred())
-					})
-				})
-
-				Context("with an invalid request (no target path)", func() {
-					BeforeEach(func() {
-						nodeUnpubReq = &csi.NodeUnpublishVolumeRequest{
-							Version:  version,
-							VolumeId: volumeId,
-						}
-					})
-
-					It("should fail with an error", func() {
-						Expect(err).To(HaveOccurred())
-					})
-				})
-			})
-		})
-	})
-}
