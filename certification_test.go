@@ -131,9 +131,17 @@ var _ = Describe("CSI Certification", func() {
 
 	Context("when the controller is interrogated for its ID", func() {
 		var csiIdentityClient csi.IdentityClient
+		var identityConn *grpc.ClientConn
 
 		BeforeEach(func() {
-			csiIdentityClient = csiControllerClient.(csi.IdentityClient)
+			identityConn, err = grpc.Dial(certFixture.ControllerAddress, grpc.WithInsecure())
+			Expect(err).NotTo(HaveOccurred())
+			csiIdentityClient = csi.NewIdentityClient(conn)
+		})
+
+		AfterEach(func() {
+			err := identityConn.Close()
+			Expect(err).NotTo(HaveOccurred())
 		})
 
 		It("should return an array of supported versions", func() {
@@ -358,11 +366,18 @@ var _ = Describe("CSI Certification", func() {
 
 						Context("when the node is interrogated for its ID", func() {
 							var csiIdentityClient csi.IdentityClient
+							var identityConn *grpc.ClientConn
 
 							BeforeEach(func() {
-								csiIdentityClient = csiNodeClient.(csi.IdentityClient)
+								identityConn, err = grpc.Dial(certFixture.NodeAddress, grpc.WithInsecure())
+								Expect(err).NotTo(HaveOccurred())
+								csiIdentityClient = csi.NewIdentityClient(conn)
 							})
 
+							AfterEach(func() {
+								err := identityConn.Close()
+								Expect(err).NotTo(HaveOccurred())
+							})
 
 							It("should return an array of supported versions", func() {
 								res, err := csiIdentityClient.GetSupportedVersions(
