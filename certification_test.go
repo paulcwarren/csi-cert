@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"os"
 	"time"
+	"regexp"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/paulcwarren/csi-cert"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var isSeeded = false
@@ -125,6 +128,8 @@ var _ = Describe("CSI Certification", func() {
 			Expect(resp).ToNot(BeNil())
 		})
 	})
+
+	identityTests(csiControllerClient.(csi.IdentityClient))
 
 	Context("when the plugin's capabilities are fetched", func() {
 		var (
@@ -300,6 +305,8 @@ var _ = Describe("CSI Certification", func() {
 								Expect(resp).ToNot(BeNil())
 							})
 						})
+
+						identityTests(csiNodeClient.(csi.IdentityClient))
 
 						// TODO: PublishNode, UnpublishNode should be tested here before deleteing volume
 						Context("when a volume is node published", func() {
@@ -667,3 +674,51 @@ var _ = Describe("CSI Certification", func() {
 	}
 
 })
+
+func identityTests(csiIdentityClient csi.IdentityClient) {
+	Context("when the client is interrogated for its ID", func() {
+		It("should return an array of supported versions", func() {
+			res, err := csiIdentityClient.GetSupportedVersions(
+				context.Background(),
+				&csi.GetSupportedVersionsRequest{})
+
+			By("checking response to have supported versions list")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(res.GetSupportedVersions()).NotTo(BeNil())
+			Expect(len(res.GetSupportedVersions()) >= 1).To(BeTrue())
+
+			By("checking each version")
+			for _, version := range res.GetSupportedVersions() {
+				Expect(version).NotTo(BeNil())
+				Expect(version.GetMajor()).To(BeNumerically("<", 100))
+				Expect(version.GetMinor()).To(BeNumerically("<", 100))
+				Expect(version.GetPatch()).To(BeNumerically("<", 100))
+			}
+		})
+
+		It("should fail when no version is provided", func() {
+			_, err := csiIdentityClient.GetPluginInfo(context.Background(), &csi.GetPluginInfoRequest{})
+			Expect(err).To(HaveOccurred())
+
+			serverError, ok := status.FromError(err)
+			Expect(ok).To(BeTrue())
+			Expect(serverError.Code()).To(Equal(codes.InvalidArgument))
+		})
+
+		It("should return appropriate information", func() {
+			req := &csi.GetPluginInfoRequest{
+				Version: version,
+			}
+			res, err := csiIdentityClient.GetPluginInfo(context.Background(), req)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(res).NotTo(BeNil())
+
+			By("verifying name size and characters")
+			Expect(res.GetName()).ToNot(HaveLen(0))
+			Expect(len(res.GetName())).To(BeNumerically("<=", 63))
+			Expect(regexp.
+			MustCompile("^[a-zA-Z][A-Za-z0-9-\\.\\_]{0,61}[a-zA-Z]$").
+				MatchString(res.GetName())).To(BeTrue())
+		})
+	})
+}
