@@ -449,6 +449,10 @@ var _ = Describe("CSI Certification", func() {
 									publishVolumeInfo = controllerPublishResp.GetPublishVolumeInfo()
 								}
 
+								volumeId = createVolResp.GetVolumeInfo().GetId()
+								volumeAttributes = createVolResp.GetVolumeInfo().GetAttributes()
+								publishVolumeInfo = map[string]string{}
+
 								nodePubReq = &csi.NodePublishVolumeRequest{
 									Version:           version,
 									VolumeId:          volumeId,
@@ -484,12 +488,6 @@ var _ = Describe("CSI Certification", func() {
 									anotherNodePubResp *csi.NodePublishVolumeResponse
 								)
 
-								BeforeEach(func() {
-									volumeId = createVolResp.GetVolumeInfo().GetId()
-									volumeAttributes = createVolResp.GetVolumeInfo().GetAttributes()
-									publishVolumeInfo = map[string]string{}
-								})
-
 								JustBeforeEach(func() {
 									anotherNodePubResp, err = csiNodeClient.NodePublishVolume(ctx, nodePubReq)
 								})
@@ -502,8 +500,18 @@ var _ = Describe("CSI Certification", func() {
 							})
 
 							Context("with an invalid request (no volume id)", func() {
-								BeforeEach(func() {
-									volumeId = ""
+								JustBeforeEach(func() {
+									nodePubReq = &csi.NodePublishVolumeRequest{
+										Version:           version,
+										VolumeId:          "",
+										VolumeAttributes:  volumeAttributes,
+										PublishVolumeInfo: publishVolumeInfo,
+										TargetPath:        targetPath,
+										VolumeCapability:  volCapability,
+										Readonly:          readOnly,
+									}
+
+									_, err = csiNodeClient.NodePublishVolume(ctx, nodePubReq)
 								})
 
 								It("should fail with an error", func() {
