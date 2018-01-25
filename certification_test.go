@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
-	"time"
 	"regexp"
+	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -116,12 +116,12 @@ var _ = Describe("CSI Certification", func() {
 		Expect(err).NotTo(HaveOccurred())
 	})
 
-	Context("when the controller is probed", func(){
+	Context("when the controller is probed", func() {
 		var resp *csi.ControllerProbeResponse
-		JustBeforeEach(func(){
+		JustBeforeEach(func() {
 			resp, err = csiControllerClient.ControllerProbe(ctx, &csi.ControllerProbeRequest{Version: version})
 		})
-		It("should succeed", func(){
+		It("should succeed", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(resp).ToNot(BeNil())
 		})
@@ -173,7 +173,7 @@ var _ = Describe("CSI Certification", func() {
 			Expect(res.GetName()).ToNot(HaveLen(0))
 			Expect(len(res.GetName())).To(BeNumerically("<=", 63))
 			Expect(regexp.
-			MustCompile("^[a-zA-Z][A-Za-z0-9-\\.\\_]{0,61}[a-zA-Z]$").
+				MustCompile("^[a-zA-Z][A-Za-z0-9-\\.\\_]{0,61}[a-zA-Z]$").
 				MatchString(res.GetName())).To(BeTrue())
 		})
 	})
@@ -330,7 +330,7 @@ var _ = Describe("CSI Certification", func() {
 							csiNodeClient csi.NodeClient
 						)
 
-						BeforeEach(func(){
+						BeforeEach(func() {
 							fileName := os.Getenv("FIXTURE_FILENAME")
 							certFixture, err := csi_cert.LoadCertificationFixture(fileName)
 							if err != nil {
@@ -342,12 +342,12 @@ var _ = Describe("CSI Certification", func() {
 							ctx = context.Background()
 						})
 
-						Context("when a node is probed", func(){
+						Context("when a node is probed", func() {
 							var resp *csi.NodeProbeResponse
-							JustBeforeEach(func(){
-								resp, err = csiNodeClient.NodeProbe(ctx,&csi.NodeProbeRequest{Version: version})
+							JustBeforeEach(func() {
+								resp, err = csiNodeClient.NodeProbe(ctx, &csi.NodeProbeRequest{Version: version})
 							})
-							It("should succeed", func(){
+							It("should succeed", func() {
 								Expect(err).ToNot(HaveOccurred())
 								Expect(resp).ToNot(BeNil())
 							})
@@ -399,7 +399,7 @@ var _ = Describe("CSI Certification", func() {
 								Expect(res.GetName()).ToNot(HaveLen(0))
 								Expect(len(res.GetName())).To(BeNumerically("<=", 63))
 								Expect(regexp.
-								MustCompile("^[a-zA-Z][A-Za-z0-9-\\.\\_]{0,61}[a-zA-Z]$").
+									MustCompile("^[a-zA-Z][A-Za-z0-9-\\.\\_]{0,61}[a-zA-Z]$").
 									MatchString(res.GetName())).To(BeTrue())
 							})
 						})
@@ -407,11 +407,11 @@ var _ = Describe("CSI Certification", func() {
 						// TODO: PublishNode, UnpublishNode should be tested here before deleteing volume
 						Context("when a volume is node published", func() {
 							var (
-								nodePubReq    *csi.NodePublishVolumeRequest
-								nodePubResp   *csi.NodePublishVolumeResponse
-								volName       string
-								targetPath    string
-								readOnly      bool
+								nodePubReq  *csi.NodePublishVolumeRequest
+								nodePubResp *csi.NodePublishVolumeResponse
+								volName     string
+								targetPath  string
+								readOnly    bool
 
 								volumeId          string
 								volumeAttributes  map[string]string
@@ -437,18 +437,6 @@ var _ = Describe("CSI Certification", func() {
 							})
 
 							JustBeforeEach(func() {
-								if hasPublishUnpublishCapability {
-									controllerPublishRequest = &csi.ControllerPublishVolumeRequest{
-										Version:  version,
-										VolumeId: volumeId,
-										Readonly: false,
-									}
-									controllerPublishResp, err = csiControllerClient.ControllerPublishVolume(ctx, controllerPublishRequest)
-									Expect(err).NotTo(HaveOccurred())
-									Expect(controllerPublishResp).NotTo(BeNil())
-									publishVolumeInfo = controllerPublishResp.GetPublishVolumeInfo()
-								}
-
 								volumeId = createVolResp.GetVolumeInfo().GetId()
 								volumeAttributes = createVolResp.GetVolumeInfo().GetAttributes()
 								publishVolumeInfo = map[string]string{}
@@ -461,6 +449,19 @@ var _ = Describe("CSI Certification", func() {
 									TargetPath:        targetPath,
 									VolumeCapability:  volCapability,
 									Readonly:          readOnly,
+								}
+
+								if hasPublishUnpublishCapability {
+									controllerPublishRequest = &csi.ControllerPublishVolumeRequest{
+										Version:          version,
+										VolumeId:         volumeId,
+										Readonly:         false,
+										VolumeAttributes: volumeAttributes,
+									}
+									controllerPublishResp, err = csiControllerClient.ControllerPublishVolume(ctx, controllerPublishRequest)
+									Expect(err).NotTo(HaveOccurred())
+									Expect(controllerPublishResp).NotTo(BeNil())
+									publishVolumeInfo = controllerPublishResp.GetPublishVolumeInfo()
 								}
 
 								nodePubResp, err = csiNodeClient.NodePublishVolume(ctx, nodePubReq)
