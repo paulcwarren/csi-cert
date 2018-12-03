@@ -13,7 +13,7 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 
-	"github.com/container-storage-interface/spec/lib/go/csi/v0"
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/paulcwarren/csi-cert"
 )
 
@@ -75,7 +75,7 @@ func getContollerCapabilites() {
 
 func VolumeID(volID string) GomegaMatcher {
 	return WithTransform(func(entry *csi.ListVolumesResponse_Entry) string {
-		return entry.GetVolume().GetId()
+		return entry.GetVolume().GetVolumeId()
 	}, Equal(volID))
 }
 
@@ -191,7 +191,7 @@ var _ = Describe("CSI Certification", func() {
 					})
 
 					AfterEach(func() {
-						volumeId := createVolResp.GetVolume().GetId()
+						volumeId := createVolResp.GetVolume().GetVolumeId()
 						deleteRequest := &csi.DeleteVolumeRequest{
 							VolumeId: volumeId,
 						}
@@ -205,7 +205,7 @@ var _ = Describe("CSI Certification", func() {
 					It("should succeed", func() {
 						Expect(err).NotTo(HaveOccurred())
 						Expect(createVolResp).NotTo(BeNil())
-						Expect(createVolResp.GetVolume().GetId()).NotTo(BeEmpty())
+						Expect(createVolResp.GetVolume().GetVolumeId()).NotTo(BeEmpty())
 					})
 
 					if hasListVolumesCapability {
@@ -221,7 +221,7 @@ var _ = Describe("CSI Certification", func() {
 								})
 
 								It("should include the volume just created", func() {
-									volumeId := createVolResp.GetVolume().GetId()
+									volumeId := createVolResp.GetVolume().GetVolumeId()
 									Expect(err).NotTo(HaveOccurred())
 									Expect(listResp).NotTo(BeNil())
 									Expect(listResp.GetEntries()).To(ContainElement(VolumeID(volumeId)))
@@ -239,7 +239,7 @@ var _ = Describe("CSI Certification", func() {
 						JustBeforeEach(func() {
 							volInfo := createVolResp.GetVolume()
 							validateVolumeRequest = &csi.ValidateVolumeCapabilitiesRequest{
-								VolumeId: volInfo.GetId(),
+								VolumeId: volInfo.GetVolumeId(),
 								VolumeCapabilities: []*csi.VolumeCapability{{AccessType: &csi.VolumeCapability_Mount{
 									Mount: &csi.VolumeCapability_MountVolume{
 										MountFlags: []string{""},
@@ -358,10 +358,9 @@ var _ = Describe("CSI Certification", func() {
 								targetPath  string
 								readOnly    bool
 
-								volumeId         string
-								volumeAttributes map[string]string
-								publishInfo      map[string]string
-								volCapability    *csi.VolumeCapability
+								volumeId       string
+								publishContext map[string]string
+								volCapability  *csi.VolumeCapability
 
 								controllerPublishRequest *csi.ControllerPublishVolumeRequest
 								controllerPublishResp    *csi.ControllerPublishVolumeResponse
@@ -373,23 +372,20 @@ var _ = Describe("CSI Certification", func() {
 								osErr := os.MkdirAll("/tmp/_mounts", os.ModePerm)
 								Expect(osErr).NotTo(HaveOccurred())
 
-								volumeId = createVolResp.GetVolume().GetId()
-								volumeAttributes = createVolResp.GetVolume().GetAttributes()
-								publishInfo = map[string]string{}
+								volumeId = createVolResp.GetVolume().GetVolumeId()
+								publishContext = map[string]string{}
 								volCapability = &csi.VolumeCapability{
 									AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{MountFlags: []string{}}},
 								}
 							})
 
 							JustBeforeEach(func() {
-								volumeId = createVolResp.GetVolume().GetId()
-								volumeAttributes = createVolResp.GetVolume().GetAttributes()
-								publishInfo = map[string]string{}
+								volumeId = createVolResp.GetVolume().GetVolumeId()
+								publishContext = map[string]string{}
 
 								nodePubReq = &csi.NodePublishVolumeRequest{
 									VolumeId:         volumeId,
-									VolumeAttributes: volumeAttributes,
-									PublishInfo:      publishInfo,
+									PublishContext:   publishContext,
 									TargetPath:       targetPath,
 									VolumeCapability: volCapability,
 									Readonly:         readOnly,
@@ -397,14 +393,13 @@ var _ = Describe("CSI Certification", func() {
 
 								if hasPublishUnpublishCapability {
 									controllerPublishRequest = &csi.ControllerPublishVolumeRequest{
-										VolumeId:         volumeId,
-										Readonly:         false,
-										VolumeAttributes: volumeAttributes,
+										VolumeId: volumeId,
+										Readonly: false,
 									}
 									controllerPublishResp, err = csiControllerClient.ControllerPublishVolume(ctx, controllerPublishRequest)
 									Expect(err).NotTo(HaveOccurred())
 									Expect(controllerPublishResp).NotTo(BeNil())
-									publishInfo = controllerPublishResp.GetPublishInfo()
+									publishContext = controllerPublishResp.GetPublishContext()
 								}
 
 								nodePubResp, err = csiNodeClient.NodePublishVolume(ctx, nodePubReq)
@@ -412,7 +407,7 @@ var _ = Describe("CSI Certification", func() {
 
 							AfterEach(func() {
 								if hasPublishUnpublishCapability {
-									volumeId := createVolResp.GetVolume().GetId()
+									volumeId := createVolResp.GetVolume().GetVolumeId()
 									unpublishRequest := &csi.ControllerUnpublishVolumeRequest{
 										VolumeId: volumeId,
 									}
@@ -446,8 +441,7 @@ var _ = Describe("CSI Certification", func() {
 								JustBeforeEach(func() {
 									nodePubReq = &csi.NodePublishVolumeRequest{
 										VolumeId:         "",
-										VolumeAttributes: volumeAttributes,
-										PublishInfo:      publishInfo,
+										PublishContext:   publishContext,
 										TargetPath:       targetPath,
 										VolumeCapability: volCapability,
 										Readonly:         readOnly,
@@ -512,6 +506,7 @@ var _ = Describe("CSI Certification", func() {
 										Expect(anotherUnpubResp).To(Equal(nodeUnpubResp))
 									})
 								})
+
 								Context("with an invalid request (no volume id)", func() {
 									BeforeEach(func() {
 										nodeUnpubReq = &csi.NodeUnpublishVolumeRequest{
@@ -548,7 +543,7 @@ var _ = Describe("CSI Certification", func() {
 								)
 
 								JustBeforeEach(func() {
-									volumeId := createVolResp.GetVolume().GetId()
+									volumeId := createVolResp.GetVolume().GetVolumeId()
 									publishRequest = &csi.ControllerPublishVolumeRequest{
 										VolumeId: volumeId,
 										Readonly: false,
@@ -557,7 +552,7 @@ var _ = Describe("CSI Certification", func() {
 								})
 
 								AfterEach(func() {
-									volumeId := createVolResp.GetVolume().GetId()
+									volumeId := createVolResp.GetVolume().GetVolumeId()
 									unpublishRequest := &csi.ControllerUnpublishVolumeRequest{
 										VolumeId: volumeId,
 									}
@@ -593,7 +588,7 @@ var _ = Describe("CSI Certification", func() {
 									)
 
 									BeforeEach(func() {
-										volumeId := createVolResp.GetVolume().GetId()
+										volumeId := createVolResp.GetVolume().GetVolumeId()
 										unpublishRequest = &csi.ControllerUnpublishVolumeRequest{
 											VolumeId: volumeId,
 										}
@@ -636,7 +631,7 @@ var _ = Describe("CSI Certification", func() {
 						)
 
 						JustBeforeEach(func() {
-							volumeId = createVolResp.GetVolume().GetId()
+							volumeId = createVolResp.GetVolume().GetVolumeId()
 							deleteRequest = &csi.DeleteVolumeRequest{
 								VolumeId: volumeId,
 							}
@@ -652,6 +647,7 @@ var _ = Describe("CSI Certification", func() {
 							var (
 								anotherDeleteResp *csi.DeleteVolumeResponse
 							)
+
 							JustBeforeEach(func() {
 								anotherDeleteResp, err = csiControllerClient.DeleteVolume(ctx, deleteRequest)
 							})
@@ -704,9 +700,6 @@ var _ = Describe("CSI Certification", func() {
 					Expect(capResp.GetAvailableCapacity()).NotTo(BeNil())
 				})
 			})
-
 		})
-
 	}
-
 })
